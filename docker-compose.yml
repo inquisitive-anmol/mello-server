@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mello-mongodb
+    restart: always
+    ports:
+      - '27017:27017'
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongodb_data:/data/db
+      - ./docker/mongo/init-replica.js:/docker-entrypoint-initdb.d/init-replica.js
+    networks:
+      - mello_internal
+
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: mello-redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - mello_internal
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  mello_internal:
+    driver: bridge
