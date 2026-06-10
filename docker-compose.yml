@@ -1,18 +1,33 @@
 version: '3.8'
 
 services:
-  mongodb:
-    image: mongo:7.0
-    container_name: mello-mongodb
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mello-server
     restart: always
     ports:
-      - '27017:27017'
-    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
-    volumes:
-      - mongodb_data:/data/db
-      - ./docker/mongo/init-replica.js:/docker-entrypoint-initdb.d/init-replica.js
+      - '3000:3000'
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      # Overwrite the addresses from .env to use the internal docker network names
+      - REDIS_URL=redis://redis:6379
+      - LIVEKIT_URL=ws://livekit:7880
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
     networks:
       - mello_internal
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
 
   redis:
     image: redis/redis-stack-server:latest
@@ -24,9 +39,32 @@ services:
       - redis_data:/data
     networks:
       - mello_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: mello-livekit
+    restart: always
+    # Note: For production, set LIVEKIT_NODE_IP to your public IP in the .env file (or host environment)
+    command: --node-ip=${LIVEKIT_NODE_IP:-127.0.0.1}
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      - LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}:${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_REDIS_ADDRESS=redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - mello_internal
 
 volumes:
-  mongodb_data:
   redis_data:
 
 networks:
