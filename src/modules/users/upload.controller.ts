@@ -30,10 +30,9 @@ export async function uploadAvatar(request: FastifyRequest, reply: FastifyReply)
   await pipeline(data.file, fs.createWriteStream(filePath));
 
   // Construct public URL
-  // If we are relying on EXPO_PUBLIC_API_URL or something, we can use the request host
-  const protocol = request.protocol;
-  const host = request.headers.host;
-  const publicUrl = `${protocol}://${host}/assets/avatars/${filename}`;
+  // We should prefer the BASE_URL env variable to avoid reverse-proxy protocol issues (like http instead of https)
+  const baseUrl = process.env.BASE_URL || `${request.protocol}://${request.headers.host}`;
+  const publicUrl = `${baseUrl.replace(/\/$/, '')}/assets/avatars/${filename}`;
 
   return reply.send({ success: true, url: publicUrl });
 }
