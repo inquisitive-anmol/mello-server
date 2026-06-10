@@ -101,6 +101,9 @@ export async function applyPartner(request: FastifyRequest, reply: FastifyReply)
   user.settings.isVerified = true;
   user.profile.languages = languages;
   user.profile.bio = bio;
+  if (!user.settings.callRate || user.settings.callRate === 0) {
+    user.settings.callRate = 8;
+  }
   if (avatarUrl) {
     user.profile.avatarUrl = avatarUrl;
   }
