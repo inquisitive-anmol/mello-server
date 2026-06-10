@@ -1,13 +1,12 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { getAuth } from '@clerk/fastify';
 import { WalletService } from './wallet.service';
 import { WalletLedger } from './wallet-ledger.model';
 import { User } from '../users/user.model';
 import { RazorpayService } from './razorpay.service';
 
 export async function getBalance(request: FastifyRequest, reply: FastifyReply) {
-  const { userId: clerkId } = getAuth(request);
-  const user = await User.findOne({ clerkId });
+  const userId = (request as any).auth?.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const balance = await WalletService.getBalance(user._id.toString());
@@ -37,8 +36,8 @@ export async function getLedgerHistory(
   request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number } }>,
   reply: FastifyReply
 ) {
-  const { userId: clerkId } = getAuth(request);
-  const user = await User.findOne({ clerkId });
+  const userId = (request as any).auth?.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const limit = Number(request.query.limit) || 20;
@@ -51,7 +50,8 @@ export async function getLedgerHistory(
 
   const history = await WalletLedger.find(query)
     .sort({ _id: -1 })
-    .limit(limit + 1);
+    .limit(limit + 1)
+    .lean();
 
   let nextCursor = null;
   if (history.length > limit) {
@@ -59,8 +59,14 @@ export async function getLedgerHistory(
     nextCursor = nextItem?._id;
   }
 
+  const formattedHistory = history.map((tx: any) => ({
+    ...tx,
+    amount: tx.amount?.toString() || '0',
+    balanceAfter: tx.balanceAfter?.toString() || '0',
+  }));
+
   return reply.send({
-    data: history,
+    data: formattedHistory,
     meta: {
       nextCursor,
       limit,
@@ -72,8 +78,8 @@ export async function createTopupOrder(
   request: FastifyRequest<{ Body: { amount: number; packageId?: string } }>,
   reply: FastifyReply
 ) {
-  const { userId: clerkId } = getAuth(request);
-  const user = await User.findOne({ clerkId });
+  const userId = (request as any).auth?.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const { amount } = request.body;
@@ -82,7 +88,7 @@ export async function createTopupOrder(
   }
 
   try {
-    const receipt = `topup_${user._id.toString()}_${Date.now()}`;
+    const receipt = `topup_${Date.now()}`;
     // Assuming 1 INR = 1 coin for simplicity, or some fixed rate.
     // If amount is coins, you might want a conversion rate. 
     // We will assume amount in body is INR.
@@ -103,8 +109,8 @@ export async function verifyTopupOrder(
   request: FastifyRequest<{ Body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string; coins: number } }>,
   reply: FastifyReply
 ) {
-  const { userId: clerkId } = getAuth(request);
-  const user = await User.findOne({ clerkId });
+  const userId = (request as any).auth?.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature, coins } = request.body;

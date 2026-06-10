@@ -1,79 +1,118 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { Webhook } from 'svix';
-import { env } from '../../config/env';
+import jwt from 'jsonwebtoken';
+import { OTP } from './otp.model';
 import { User } from '../users/user.model';
-import { logger } from '../../utils/logger';
+import { env } from '../../config/env';
 
-export async function clerkWebhookHandler(request: FastifyRequest, reply: FastifyReply) {
-  // To verify webhooks, Svix requires the raw string body.
-  // We'll assume the raw body is attached to request.rawBody in app.ts
-  const payload = (request as any).rawBody || JSON.stringify(request.body);
-  const headers = request.headers;
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
-  const svix_id = headers['svix-id'] as string;
-  const svix_timestamp = headers['svix-timestamp'] as string;
-  const svix_signature = headers['svix-signature'] as string;
-
-  if (!svix_id || !svix_timestamp || !svix_signature) {
-    return reply.status(400).send({ error: 'Missing svix headers' });
-  }
-
-  const wh = new Webhook(env.CLERK_WEBHOOK_SECRET);
-  let evt: any;
-
+export async function sendOtp(request: FastifyRequest<{ Body: { phone: string } }>, reply: FastifyReply) {
   try {
-    evt = wh.verify(payload, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
-    });
-  } catch (err: any) {
-    logger.error('Webhook verification failed', err.message);
-    return reply.status(400).send({ error: 'Webhook verification failed' });
-  }
+    let { phone } = request.body;
+    if (!phone) {
+      return reply.status(400).send({ success: false, error: 'Phone number is required' });
+    }
+    
+    // Normalize phone (strip +91 if needed by fast2sms, or keep it depending on integration)
+    // Fast2SMS usually expects a 10 digit number for India.
+    const rawNumber = phone.replace(/\D/g, '').slice(-10);
 
-  const { id, ...attributes } = evt.data;
-  const eventType = evt.type;
+    const otpCode = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-  logger.info({ eventType, id }, 'Received Clerk webhook');
+    // Save to DB
+    await OTP.findOneAndUpdate(
+      { phoneNumber: rawNumber },
+      { otp: otpCode, expiresAt },
+      { upsert: true, new: true }
+    );
 
-  try {
-    if (eventType === 'user.created') {
-      await User.create({
-        clerkId: id,
-        username: attributes.username || `user_${id.substring(0, 8)}`,
-        profile: {
-          displayName: `${attributes.first_name || ''} ${attributes.last_name || ''}`.trim(),
-          avatarUrl: attributes.image_url || '',
-          bio: '',
-          vibeTags: [],
-          languages: [],
+    // Call Fast2SMS API
+    if (process.env.FAST2SMS_API_KEY) {
+      const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+        method: 'POST',
+        headers: {
+          'authorization': process.env.FAST2SMS_API_KEY,
+          'Content-Type': 'application/json'
         },
+        body: JSON.stringify({
+          route: 'q',
+          message: `Your Mello verification code is ${otpCode}. It will expire in 5 minutes.`,
+          language: 'english',
+          flash: 0,
+          numbers: rawNumber,
+        })
       });
-      logger.info({ clerkId: id }, 'User created from webhook');
-    } else if (eventType === 'user.updated') {
-      await User.findOneAndUpdate(
-        { clerkId: id },
-        {
-          $set: {
-            username: attributes.username,
-            'profile.displayName': `${attributes.first_name || ''} ${attributes.last_name || ''}`.trim(),
-            'profile.avatarUrl': attributes.image_url,
-          },
-        }
-      );
-      logger.info({ clerkId: id }, 'User updated from webhook');
-    } else if (eventType === 'user.deleted') {
-      await User.findOneAndUpdate(
-        { clerkId: id },
-        { status: 'deactivated' }
-      );
-      logger.info({ clerkId: id }, 'User deactivated from webhook');
+      const data = await response.json();
+      if (!data.return) {
+        request.log.error('Fast2SMS Error', data);
+      }
+    } else {
+      request.log.warn(`FAST2SMS_API_KEY not set. OTP for ${rawNumber} is ${otpCode}`);
     }
 
-    return reply.status(200).send({ success: true });
-  } catch (error) {
-    logger.error({ err: error }, 'Error processing webhook');
-    return reply.status(500).send({ error: 'Internal Server Error' });
+    return reply.send({ success: true, message: 'OTP sent successfully' });
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ success: false, error: 'Failed to send OTP' });
+  }
+}
+
+export async function verifyOtp(request: FastifyRequest<{ Body: { phone: string, otp: string } }>, reply: FastifyReply) {
+  try {
+    const { phone, otp } = request.body;
+    if (!phone || !otp) {
+      return reply.status(400).send({ success: false, error: 'Phone and OTP are required' });
+    }
+
+    const rawNumber = phone.replace(/\D/g, '').slice(-10);
+
+    // Check OTP
+    const otpDoc = await OTP.findOne({ phoneNumber: rawNumber, otp });
+    
+    // In Dev Mode, allow bypass with '123456'
+    const isDevBypass = process.env.NODE_ENV !== 'production' && otp === '123456';
+    
+    if (!otpDoc && !isDevBypass) {
+      return reply.status(400).send({ success: false, error: 'Invalid or expired OTP' });
+    }
+
+    // Delete OTP after successful verification
+    if (otpDoc) {
+      await OTP.deleteOne({ _id: otpDoc._id });
+    }
+
+    // Find or create User
+    let user = await User.findOne({ phoneNumber: rawNumber });
+    
+    if (!user) {
+      // Create new user
+      user = new User({
+        phoneNumber: rawNumber,
+        username: `user_${rawNumber}_${Math.floor(Math.random() * 1000)}`,
+        profile: {
+          displayName: 'New Vibing Human',
+        }
+      });
+      await user.save();
+    }
+
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user._id.toString() },
+      process.env.JWT_SECRET || 'mello_super_secret_jwt_key_2026',
+      { expiresIn: '30d' }
+    );
+
+    return reply.send({
+      success: true,
+      token,
+      user
+    });
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ success: false, error: 'Failed to verify OTP' });
   }
 }

@@ -7,6 +7,7 @@ import { requireSocketAuth } from './socket.middleware';
 import { registerPresenceHandlers } from './handlers/presence.handler';
 import { registerRoomHandlers } from './handlers/room.handler';
 import { registerCallHandlers } from './handlers/call.handler';
+import { registerChatHandlers } from './handlers/chat.handler';
 
 let io: SocketIOServer;
 
@@ -32,6 +33,7 @@ export function initSocketServer(app: FastifyInstance) {
     registerPresenceHandlers(io, socket);
     registerRoomHandlers(io, socket);
     registerCallHandlers(io, socket);
+    registerChatHandlers(io, socket);
 
     socket.on('disconnect', () => {
       logger.info({ socketId: socket.id, userId: socket.data.userId }, 'Socket disconnected');

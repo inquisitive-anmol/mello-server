@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
-  clerkId: string;
+  phoneNumber: string;
   username: string;
   profile: {
     displayName: string;
@@ -19,6 +19,7 @@ export interface IUser extends Document {
     isAvailable: boolean;
     callRate: number;
     videoEnabled: boolean;
+    isVerified: boolean;
   };
   metrics: {
     totalHangoutMinutes: number;
@@ -27,13 +28,14 @@ export interface IUser extends Document {
     reviewCount: number;
   };
   status: 'active' | 'suspended' | 'deactivated';
+  likedBy: string[];
   createdAt: Date;
   updatedAt: Date;
 }
 
 const userSchema = new Schema<IUser>(
   {
-    clerkId: { type: String, required: true, unique: true, index: true },
+    phoneNumber: { type: String, required: true, unique: true, index: true },
     username: { type: String, required: true, unique: true, index: true },
     profile: {
       displayName: { type: String, default: '' },
@@ -51,6 +53,7 @@ const userSchema = new Schema<IUser>(
       isAvailable: { type: Boolean, default: false },
       callRate: { type: Number, default: 0 },
       videoEnabled: { type: Boolean, default: false },
+      isVerified: { type: Boolean, default: false },
     },
     metrics: {
       totalHangoutMinutes: { type: Number, default: 0 },
@@ -63,6 +66,7 @@ const userSchema = new Schema<IUser>(
       enum: ['active', 'suspended', 'deactivated'],
       default: 'active',
     },
+    likedBy: { type: [String], default: [] },
   },
   { timestamps: true }
 );

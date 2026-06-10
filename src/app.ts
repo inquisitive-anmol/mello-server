@@ -1,8 +1,10 @@
 import fastify from 'fastify';
 import cors from '@fastify/cors';
-import { clerkPlugin } from '@clerk/fastify';
 import { setupErrorHandler } from './middleware/error.middleware';
 import { env } from './config/env';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import path from 'path';
 
 import { authRoutes } from './modules/auth/auth.routes';
 import { userRoutes } from './modules/users/user.routes';
@@ -13,23 +15,13 @@ import { discoveryRoutes } from './modules/discovery/discovery.routes';
 import { matchRoutes } from './modules/match/match.routes';
 
 import { roomRoutes } from './modules/rooms/room.routes';
+import { chatRoutes } from './modules/chat/chat.routes';
 
 export function buildApp() {
   const app = fastify({
     logger: false, // We're using a custom pino logger
   });
 
-  // Attach rawBody for Svix webhooks
-  app.addHook('preParsing', (request, reply, payload, done) => {
-    let rawBody = '';
-    payload.on('data', chunk => {
-      rawBody += chunk.toString();
-    });
-    payload.on('end', () => {
-      (request as any).rawBody = rawBody;
-    });
-    done(null, payload);
-  });
 
   // Plugins
   app.register(cors, {
@@ -39,6 +31,24 @@ export function buildApp() {
   app.register(require('@fastify/rate-limit'), {
     max: 100, // 100 requests
     timeWindow: '1 minute'
+  });
+
+  app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    }
+  });
+
+  app.register(fastifyStatic, {
+    root: path.join(process.cwd(), 'uploads'),
+    prefix: '/assets/',
+    decorateReply: false,
+  });
+
+  app.register(fastifyStatic, {
+    root: path.join(process.cwd(), 'public'),
+    prefix: '/',
+    decorateReply: false,
   });
 
   // Health checks — registered BEFORE Clerk so they are never intercepted
@@ -59,11 +69,6 @@ export function buildApp() {
     });
   });
 
-  // Clerk — pass keys explicitly so it doesn't rely on process.env auto-detection
-  app.register(clerkPlugin, {
-    publishableKey: env.CLERK_PUBLISHABLE_KEY,
-    secretKey: env.CLERK_SECRET_KEY,
-  });
 
   // Global Error Handler
   setupErrorHandler(app);
@@ -76,6 +81,7 @@ export function buildApp() {
     api.register(discoveryRoutes, { prefix: '/discovery' });
     api.register(matchRoutes, { prefix: '/match' });
     api.register(roomRoutes, { prefix: '/rooms' });
+    api.register(chatRoutes, { prefix: '/chat' });
   }, { prefix: `/api/${env.API_VERSION}` });
 
   return app;

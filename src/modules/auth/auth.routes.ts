@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { clerkWebhookHandler } from './auth.controller';
+import { sendOtp, verifyOtp } from './auth.controller';
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post('/webhook/clerk', clerkWebhookHandler);
+  app.post('/send-otp', sendOtp);
+  app.post('/verify-otp', verifyOtp);
 }
