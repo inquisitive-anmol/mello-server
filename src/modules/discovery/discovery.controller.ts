@@ -7,8 +7,9 @@ export async function getListeners(
 ) {
   const page = Number(request.query.page) || 1;
   const limit = Number(request.query.limit) || 20;
+  const currentUserId = (request as any).auth?.userId;
 
-  const result = await DiscoveryService.getActiveListeners(page, limit);
+  const result = await DiscoveryService.getActiveListeners(page, limit, currentUserId);
   return reply.send({
     data: result.data,
     meta: {

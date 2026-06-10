@@ -4,6 +4,7 @@ import { logger } from './utils/logger';
 import { connectDB } from './config/database';
 import './jobs/matchmaking.worker';
 import './jobs/billing.worker';
+import './jobs/presence.worker';
 
 import { initSocketServer } from './realtime/socket.server';
 

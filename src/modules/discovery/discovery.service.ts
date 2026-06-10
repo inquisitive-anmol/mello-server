@@ -8,38 +8,45 @@ const DISCOVERY_CACHE_KEY = 'discovery:listeners';
 const DISCOVERY_CACHE_TTL = 60; // 60 seconds
 
 export class DiscoveryService {
-  static async getActiveListeners(page: number = 1, limit: number = 20) {
-    // Try cache first
+  static async getActiveListeners(page: number = 1, limit: number = 20, currentUserId?: string) {
+    let listeners: any[] = [];
     const cached = await redis.get(DISCOVERY_CACHE_KEY);
+    
     if (cached) {
-      const parsed = JSON.parse(cached);
-      // Simple pagination on cached array
-      const skip = (page - 1) * limit;
-      return {
-        data: parsed.slice(skip, skip + limit),
-        total: parsed.length,
-        source: 'cache'
-      };
+      listeners = JSON.parse(cached);
+    } else {
+      listeners = await User.find({
+        'settings.isListener': true,
+        'settings.isAvailable': true,
+        status: 'active'
+      })
+      .sort({ 'metrics.rating': -1 }) // Sort by highest rating
+      .limit(100) // Cache top 100 for discovery
+      .lean();
+
+      await redis.setex(DISCOVERY_CACHE_KEY, DISCOVERY_CACHE_TTL, JSON.stringify(listeners));
     }
 
-    // Cache miss, fetch from DB
-    const listeners = await User.find({
-      'settings.isListener': true,
-      'settings.isAvailable': true,
-      status: 'active'
-    })
-    .sort({ 'metrics.rating': -1 }) // Sort by highest rating
-    .limit(100) // Cache top 100 for discovery
-    .lean();
+    if (currentUserId) {
+      listeners = listeners.filter((u: any) => u._id.toString() !== currentUserId && u.clerkId !== currentUserId);
+    }
 
-    // Store in cache
-    await redis.setex(DISCOVERY_CACHE_KEY, DISCOVERY_CACHE_TTL, JSON.stringify(listeners));
+    const activeRooms = await Room.find({ status: 'active' }).select('participants.userId').lean();
+    const busyUserIds = new Set<string>();
+    activeRooms.forEach(room => {
+      room.participants.forEach(p => busyUserIds.add(p.userId.toString()));
+    });
+
+    listeners = listeners.map(u => ({
+      ...u,
+      isBusy: busyUserIds.has(u._id.toString())
+    }));
 
     const skip = (page - 1) * limit;
     return {
       data: listeners.slice(skip, skip + limit),
       total: listeners.length,
-      source: 'db'
+      source: cached ? 'cache' : 'db'
     };
   }
 

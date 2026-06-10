@@ -96,7 +96,8 @@ export async function verifyOtp(request: FastifyRequest<{ Body: { phone: string,
           displayName: '',
         },
         settings: {
-          isAvailable: true
+          isAvailable: true,
+          callRate: 8
         }
       });
       await user.save();

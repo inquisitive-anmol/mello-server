@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { redis } from '../../config/redis';
 import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
 import { logger } from '../../utils/logger';
+import { presenceQueue } from '../../jobs/queue';
 
 const PRESENCE_TTL_SECONDS = 30;
 
@@ -15,6 +16,11 @@ export function registerPresenceHandlers(io: Server, socket: Socket) {
       io.emit(SOCKET_EVENTS.PRESENCE_UPDATE, { userId, status: 'online' });
     })
     .catch(err => logger.error({ err }, 'Failed to set presence'));
+
+  // Cancel any pending offline timeout
+  presenceQueue.remove(`offline-${userId}`).catch(err => {
+    logger.error({ err, userId }, 'Failed to remove pending offline job');
+  });
 
   // Heartbeat refresh
   socket.on(SOCKET_EVENTS.PRESENCE_HEARTBEAT, () => {
@@ -30,5 +36,17 @@ export function registerPresenceHandlers(io: Server, socket: Socket) {
         io.emit(SOCKET_EVENTS.PRESENCE_UPDATE, { userId, status: 'offline' });
       })
       .catch(err => logger.error({ err }, 'Failed to clear presence on disconnect'));
+    
+    // Schedule DB offline marking after 5 minutes of disconnect
+    presenceQueue.add(
+      'markOffline', 
+      { userId }, 
+      { 
+        jobId: `offline-${userId}`, 
+        delay: 5 * 60 * 1000,
+        removeOnComplete: true,
+        removeOnFail: true
+      }
+    ).catch(err => logger.error({ err }, 'Failed to schedule offline job'));
   });
 }

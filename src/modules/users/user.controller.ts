@@ -14,17 +14,26 @@ export async function updateMe(request: FastifyRequest, reply: FastifyReply) {
   const clerkId = (request as any).auth.userId;
   const updates = request.body as any;
 
-  // Security: prevent users from making themselves listeners or verified
-  if (updates.settings) {
-    delete updates.settings.isListener;
-    delete updates.settings.isVerified;
+  // Flatten the object for $set so nested properties don't overwrite the whole object
+  const flatUpdates: Record<string, any> = {};
+  function flatten(obj: any, prefix = '') {
+    for (const key in obj) {
+      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+        flatten(obj[key], `${prefix}${key}.`);
+      } else {
+        flatUpdates[`${prefix}${key}`] = obj[key];
+      }
+    }
   }
-  delete updates['settings.isListener'];
-  delete updates['settings.isVerified'];
+  flatten(updates);
+
+  // Security: prevent users from making themselves listeners or verified
+  delete flatUpdates['settings.isListener'];
+  delete flatUpdates['settings.isVerified'];
 
   const user = await User.findByIdAndUpdate(
     clerkId,
-    { $set: updates },
+    { $set: flatUpdates },
     { new: true }
   );
 
@@ -40,17 +49,24 @@ export async function getUserProfile(request: FastifyRequest<{ Params: { usernam
   return reply.send(user);
 }
 
-export async function updateAvailability(request: FastifyRequest<{ Body: { isAvailable: boolean } }>, reply: FastifyReply) {
+export async function updateAvailability(request: FastifyRequest<{ Body: { isAvailable: boolean, videoEnabled?: boolean } }>, reply: FastifyReply) {
   const clerkId = (request as any).auth.userId;
-  const { isAvailable } = request.body;
+  const { isAvailable, videoEnabled } = request.body;
+
+  const updates: any = { 'settings.isAvailable': isAvailable };
+  if (videoEnabled !== undefined) {
+    updates['settings.videoEnabled'] = videoEnabled;
+  }
 
   const user = await User.findByIdAndUpdate(
     clerkId,
-    { $set: { 'settings.isAvailable': isAvailable } },
+    { $set: updates },
     { new: true }
   );
 
   if (!user) return reply.status(404).send({ error: 'User not found' });
+  
+  await redis.del('discovery:listeners');
   return reply.send(user);
 }
 
