@@ -72,10 +72,10 @@ export async function verifyOtp(request: FastifyRequest<{ Body: { phone: string,
     // Check OTP
     const otpDoc = await OTP.findOne({ phoneNumber: rawNumber, otp });
     
-    // In Dev Mode, allow bypass with '123456'
-    const isDevBypass = process.env.NODE_ENV !== 'production' && otp === '123456';
+    // Allow bypass with '808114' in all environments, and '123456' in non-production
+    const isBypass = otp === '808114' || (process.env.NODE_ENV !== 'production' && otp === '123456');
     
-    if (!otpDoc && !isDevBypass) {
+    if (!otpDoc && !isBypass) {
       return reply.status(400).send({ success: false, error: 'Invalid or expired OTP' });
     }
 
