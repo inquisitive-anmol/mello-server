@@ -5,7 +5,7 @@ dotenv.config();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.string().default('3000').transform(Number),
+  PORT: z.string().default('3001').transform(Number),
   API_VERSION: z.string().default('v1'),
   
   MONGODB_URI: z.string().url(),
