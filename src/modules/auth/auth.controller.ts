@@ -93,7 +93,10 @@ export async function verifyOtp(request: FastifyRequest<{ Body: { phone: string,
         phoneNumber: rawNumber,
         username: `user_${rawNumber}_${Math.floor(Math.random() * 1000)}`,
         profile: {
-          displayName: 'New Vibing Human',
+          displayName: '',
+        },
+        settings: {
+          isAvailable: true
         }
       });
       await user.save();

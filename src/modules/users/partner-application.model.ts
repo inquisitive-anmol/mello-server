@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IPartnerApplication extends Document {
   userId: mongoose.Types.ObjectId;
+  realName: string;
   languages: string[];
   gender: 'male' | 'female' | 'other';
   dob: string;
@@ -14,6 +15,7 @@ export interface IPartnerApplication extends Document {
 const partnerApplicationSchema = new Schema<IPartnerApplication>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    realName: { type: String, required: true },
     languages: { type: [String], required: true },
     gender: { type: String, enum: ['male', 'female', 'other'], required: true },
     dob: { type: String, required: true },
