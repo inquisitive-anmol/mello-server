@@ -21,6 +21,8 @@ services:
         condition: service_healthy
       livekit:
         condition: service_started
+    volumes:
+      - /var/www/mello/server/uploads:/app/uploads
     networks:
       - mello_internal
     deploy:
