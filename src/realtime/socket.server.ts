@@ -29,6 +29,7 @@ export function initSocketServer(app: FastifyInstance) {
 
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.userId }, 'Socket connected');
+    socket.join(socket.data.userId);
 
     registerPresenceHandlers(io, socket);
     registerRoomHandlers(io, socket);
