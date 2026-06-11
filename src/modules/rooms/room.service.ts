@@ -46,4 +46,30 @@ export class RoomService {
       listenerToken: await this.generateRtcToken(channelId, listenerId)
     };
   }
+
+  static async createDirectRoom(
+    callerId: string, 
+    listenerId: string, 
+    billingRate: number
+  ) {
+    const channelId = crypto.randomUUID();
+
+    const room = await Room.create({
+      channelId,
+      vibeTag: 'Direct',
+      billingRate,
+      status: 'waiting',
+      participants: [
+        { userId: new Types.ObjectId(callerId), role: 'caller' },
+        { userId: new Types.ObjectId(listenerId), role: 'listener' }
+      ]
+    });
+
+    return {
+      room,
+      channelId,
+      callerToken: await this.generateRtcToken(channelId, callerId),
+      listenerToken: await this.generateRtcToken(channelId, listenerId)
+    };
+  }
 }

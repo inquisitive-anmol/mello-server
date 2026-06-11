@@ -5,6 +5,7 @@ import { User } from '../users/user.model';
 import { getIO } from '../../realtime/socket.server';
 import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
 import { billingQueue } from '../../jobs/queue';
+import { RoomService } from './room.service';
 
 export async function getRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
   const { roomId } = request.params;
@@ -113,4 +114,102 @@ export async function submitReview(
   }).exec();
 
   return reply.status(201).send(review);
+}
+
+export async function initiateCall(
+  request: FastifyRequest<{ Body: { targetUserId: string, type: 'audio' | 'video' } }>,
+  reply: FastifyReply
+) {
+  const clerkId = (request as any).auth?.userId || 'dev_user_1';
+  const caller = await User.findById(clerkId);
+  if (!caller) return reply.status(404).send({ error: 'User not found' });
+
+  const { targetUserId, type } = request.body;
+  const targetUser = await User.findById(targetUserId);
+  if (!targetUser) return reply.status(404).send({ error: 'Target user not found' });
+
+  const billingRate = targetUser.settings.callRate || 8;
+
+  const result = await RoomService.createDirectRoom(caller._id.toString(), targetUser._id.toString(), billingRate);
+
+  const io = getIO();
+  io.to(targetUser._id.toString()).emit(SOCKET_EVENTS.CALL_INCOMING, {
+    roomId: result.room._id.toString(),
+    callerId: caller._id.toString(),
+    callerName: caller.profile.displayName || 'Unknown User',
+    callerImage: caller.profile.avatarUrl || '',
+    type,
+    rateCoins: billingRate
+  });
+
+  return reply.send({ 
+    success: true, 
+    roomId: result.room._id.toString(), 
+    callerToken: result.callerToken 
+  });
+}
+
+export async function acceptCall(
+  request: FastifyRequest<{ Params: { roomId: string } }>,
+  reply: FastifyReply
+) {
+  const clerkId = (request as any).auth?.userId || 'dev_user_1';
+  const { roomId } = request.params;
+  
+  const room = await Room.findById(roomId);
+  if (!room) return reply.status(404).send({ error: 'Room not found' });
+
+  if (room.status !== 'waiting') {
+    return reply.status(400).send({ error: 'Call is no longer waiting' });
+  }
+
+  room.status = 'active';
+  room.startedAt = new Date();
+  await room.save();
+
+  // Need to fetch tokens again or simply respond so the listener joins
+  // For the caller, emit CALL_CONNECTED
+  const callerParticipant = room.participants.find(p => p.role === 'caller');
+  if (callerParticipant) {
+    const io = getIO();
+    io.to(callerParticipant.userId.toString()).emit(SOCKET_EVENTS.CALL_CONNECTED, {
+      roomId: room._id.toString()
+    });
+  }
+
+  // Listener token
+  const listenerToken = await RoomService.generateRtcToken(room.channelId, clerkId);
+
+  // Start billing job
+  await billingQueue.add('charge', { roomId: room._id.toString() }, {
+    jobId: `billing:${room._id.toString()}`,
+    repeat: { every: 60000 }
+  });
+
+  return reply.send({ success: true, listenerToken });
+}
+
+export async function rejectCall(
+  request: FastifyRequest<{ Params: { roomId: string } }>,
+  reply: FastifyReply
+) {
+  const { roomId } = request.params;
+  const room = await Room.findById(roomId);
+  
+  if (!room) return reply.status(404).send({ error: 'Room not found' });
+
+  room.status = 'ended';
+  room.endedAt = new Date();
+  await room.save();
+
+  const callerParticipant = room.participants.find(p => p.role === 'caller');
+  if (callerParticipant) {
+    const io = getIO();
+    io.to(callerParticipant.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, {
+      roomId: room._id.toString(),
+      reason: 'rejected'
+    });
+  }
+
+  return reply.send({ success: true });
 }

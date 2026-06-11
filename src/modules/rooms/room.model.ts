@@ -8,7 +8,7 @@ export interface IRoom extends Document {
     joinedAt: Date;
     leftAt?: Date;
   }[];
-  status: 'active' | 'ended';
+  status: 'waiting' | 'active' | 'ended';
   vibeTag: string;
   billingRate: number;
   totalDuration: number;
@@ -27,7 +27,7 @@ const roomSchema = new Schema<IRoom>(
         leftAt: { type: Date },
       },
     ],
-    status: { type: String, enum: ['active', 'ended'], default: 'active' },
+    status: { type: String, enum: ['waiting', 'active', 'ended'], default: 'active' },
     vibeTag: { type: String, required: true },
     billingRate: { type: Number, required: true },
     totalDuration: { type: Number, default: 0 },
