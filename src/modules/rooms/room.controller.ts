@@ -36,10 +36,18 @@ export async function endRoom(request: FastifyRequest<{ Params: { roomId: string
   });
 
   const io = getIO();
-  io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
+  const eventPayload = { 
     roomId, 
     duration: room.totalDuration, 
     reason: 'user_ended' 
+  };
+  
+  // Emit to the room
+  io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
+  
+  // Also emit directly to individual participants to guarantee delivery
+  room.participants.forEach(p => {
+    io.to(p.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
   });
 
   return reply.send({ success: true, duration: room.totalDuration });
