@@ -17,10 +17,9 @@ export class DiscoveryService {
     } else {
       listeners = await User.find({
         'settings.isListener': true,
-        'settings.isAvailable': true,
         status: 'active'
       })
-      .sort({ 'metrics.rating': -1 }) // Sort by highest rating
+      .sort({ 'settings.isAvailable': -1, 'metrics.rating': -1 }) // Sort online first, then by rating
       .limit(100) // Cache top 100 for discovery
       .lean();
 
@@ -39,7 +38,8 @@ export class DiscoveryService {
 
     listeners = listeners.map(u => ({
       ...u,
-      isBusy: busyUserIds.has(u._id.toString())
+      isBusy: busyUserIds.has(u._id.toString()),
+      isOnline: u.settings?.isAvailable || false
     }));
 
     const skip = (page - 1) * limit;
