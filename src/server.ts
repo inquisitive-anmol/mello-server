@@ -9,7 +9,7 @@ import './jobs/presence.worker';
 import { initSocketServer } from './realtime/socket.server';
 
 async function start() {
-  const app = buildApp();
+  const app = await buildApp();
 
   await connectDB();
   

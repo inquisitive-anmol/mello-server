@@ -17,7 +17,9 @@ import { matchRoutes } from './modules/match/match.routes';
 import { roomRoutes } from './modules/rooms/room.routes';
 import { chatRoutes } from './modules/chat/chat.routes';
 
-export function buildApp() {
+import { setupAdmin } from './admin/admin.setup';
+
+export async function buildApp() {
   const app = fastify({
     logger: false, // We're using a custom pino logger
   });
@@ -83,6 +85,8 @@ export function buildApp() {
     api.register(roomRoutes, { prefix: '/rooms' });
     api.register(chatRoutes, { prefix: '/chat' });
   }, { prefix: `/api/${env.API_VERSION}` });
+
+  await setupAdmin(app);
 
   return app;
 }
