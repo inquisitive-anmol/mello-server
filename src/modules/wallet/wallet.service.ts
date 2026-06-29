@@ -16,7 +16,7 @@ export class WalletService {
   static async credit(
     userId: string,
     amount: number,
-    purpose: 'topup' | 'gift_received' | 'refund' | 'admin_credit',
+    purpose: 'topup' | 'gift_received' | 'refund' | 'admin_credit' | 'call_earnings',
     referenceId?: string,
     metadata?: Record<string, unknown>
   ) {

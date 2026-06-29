@@ -6,6 +6,7 @@ import { getIO } from '../../realtime/socket.server';
 import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
 import { billingQueue } from '../../jobs/queue';
 import { RoomService } from './room.service';
+import { WalletService } from '../wallet/wallet.service';
 
 export async function getRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
   const { roomId } = request.params;
@@ -30,10 +31,7 @@ export async function endRoom(request: FastifyRequest<{ Params: { roomId: string
   await room.save();
 
   // Remove billing job for this room
-  await billingQueue.removeRepeatable('charge', {
-    every: 60000,
-    jobId: `billing:${roomId}`
-  });
+  await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
 
   const io = getIO();
   const eventPayload = { 
@@ -138,6 +136,11 @@ export async function initiateCall(
 
   const billingRate = targetUser.settings.callRate || 8;
 
+  const balance = await WalletService.getBalance(caller._id.toString());
+  if (balance < billingRate) {
+    return reply.status(402).send({ error: 'Insufficient coins to start this call' });
+  }
+
   const result = await RoomService.createDirectRoom(caller._id.toString(), targetUser._id.toString(), billingRate);
 
   const io = getIO();
@@ -190,8 +193,10 @@ export async function acceptCall(
 
   // Start billing job
   await billingQueue.add('charge', { roomId: room._id.toString() }, {
-    jobId: `billing:${room._id.toString()}`,
-    repeat: { every: 60000 }
+    repeat: { 
+      every: 60000,
+      jobId: `billing:${room._id.toString()}`
+    }
   });
 
   return reply.send({ success: true, listenerToken });
@@ -209,6 +214,9 @@ export async function rejectCall(
   room.status = 'ended';
   room.endedAt = new Date();
   await room.save();
+
+  // Safely attempt to remove billing job if it existed
+  await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
 
   const callerParticipant = room.participants.find(p => p.role === 'caller');
   if (callerParticipant) {

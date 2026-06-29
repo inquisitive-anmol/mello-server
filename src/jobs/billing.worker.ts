@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { redis } from '../config/redis';
-import { BILLING_QUEUE_NAME } from './queue';
+import { BILLING_QUEUE_NAME, billingQueue } from './queue';
 import { Room } from '../modules/rooms/room.model';
 import { WalletService } from '../modules/wallet/wallet.service';
 import { getIO } from '../realtime/socket.server';
@@ -35,6 +35,29 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
   if (!callerParticipant || !listenerParticipant) return;
 
   const callerId = callerParticipant.userId.toString();
+  const listenerId = listenerParticipant.userId.toString();
+
+  const callerPresence = await redis.get(`presence:${callerId}`);
+  const listenerPresence = await redis.get(`presence:${listenerId}`);
+
+  if (!callerPresence || !listenerPresence) {
+    logger.warn({ roomId, callerId, listenerId }, 'A participant is offline, ending room');
+    room.status = 'ended';
+    room.endedAt = new Date();
+    room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
+    await room.save();
+
+    await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
+
+    const io = getIO();
+    io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
+      roomId, 
+      duration: room.totalDuration, 
+      reason: 'user_disconnected' 
+    });
+    return;
+  }
+
   const amount = room.billingRate;
 
   try {
@@ -44,7 +67,11 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
     const io = getIO();
     io.to(callerId).emit(SOCKET_EVENTS.COIN_BALANCE_UPDATE, { newBalance: result.newBalance });
     
-    logger.info({ roomId, callerId, amount }, 'Successfully billed for active minute');
+    // Credit the listener (Commission for the active minute)
+    const creditResult = await WalletService.credit(listenerId, amount, 'call_earnings', roomId);
+    io.to(listenerId).emit(SOCKET_EVENTS.COIN_BALANCE_UPDATE, { newBalance: creditResult.newBalance });
+
+    logger.info({ roomId, callerId, listenerId, amount }, 'Successfully billed caller and credited listener for active minute');
   } catch (error: any) {
     logger.warn({ roomId, callerId, err: error.message }, 'Billing failed, ending room');
     

@@ -6,7 +6,7 @@ export interface IWalletLedger extends Document {
   type: 'CREDIT' | 'DEBIT';
   amount: mongoose.Types.Decimal128;
   balanceAfter: mongoose.Types.Decimal128; // Snapshot for audit
-  purpose: 'topup' | 'call_charge' | 'gift_sent' | 'gift_received' | 'refund' | 'admin_credit';
+  purpose: 'topup' | 'call_charge' | 'gift_sent' | 'gift_received' | 'refund' | 'admin_credit' | 'call_earnings';
   referenceId?: string;
   metadata?: Record<string, unknown>;
   timestamp: Date;
@@ -21,7 +21,7 @@ const walletLedgerSchema = new Schema<IWalletLedger>(
     balanceAfter: { type: Schema.Types.Decimal128, required: true },
     purpose: {
       type: String,
-      enum: ['topup', 'call_charge', 'gift_sent', 'gift_received', 'refund', 'admin_credit'],
+      enum: ['topup', 'call_charge', 'gift_sent', 'gift_received', 'refund', 'admin_credit', 'call_earnings'],
       required: true,
     },
     referenceId: { type: String },
