@@ -79,13 +79,13 @@ export async function applyPartner(request: FastifyRequest, reply: FastifyReply)
     return reply.status(400).send({ error: 'You are already a verified partner.' });
   }
 
-  const { languages, gender, dob, bio, name: realName, avatarUrl } = request.body as any;
+  const { languages, gender, dob, bio, description, interests, name: realName, avatarUrl } = request.body as any;
 
-  if (!languages || !gender || !dob || !bio || !realName || !avatarUrl) {
-    return reply.status(400).send({ error: 'Missing required fields, including profile photo' });
+  if (!languages || !gender || !dob || !bio || !description || !realName || !avatarUrl) {
+    return reply.status(400).send({ error: 'Missing required fields, including description and profile photo' });
   }
 
-  // Auto approve logic for MVP
+  // Create pending application
   const application = await PartnerApplication.create({
     userId: user._id,
     realName,
@@ -93,23 +93,11 @@ export async function applyPartner(request: FastifyRequest, reply: FastifyReply)
     gender,
     dob,
     bio,
-    status: 'approved',
+    description,
+    avatarUrl,
+    interests: interests || [],
+    status: 'pending',
   });
-
-  // Update user profile
-  user.settings.isListener = true;
-  user.settings.isVerified = true;
-  user.profile.languages = languages;
-  user.profile.bio = bio;
-  if (!user.settings.callRate || user.settings.callRate === 0) {
-    user.settings.callRate = 8;
-  }
-  if (avatarUrl) {
-    user.profile.avatarUrl = avatarUrl;
-  }
-  
-  await user.save();
-  await redis.del('discovery:listeners');
 
   return reply.send({ success: true, application });
 }

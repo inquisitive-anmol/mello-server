@@ -7,6 +7,9 @@ export interface IPartnerApplication extends Document {
   gender: 'male' | 'female' | 'other';
   dob: string;
   bio: string;
+  description: string;
+  avatarUrl?: string;
+  interests?: string[];
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +23,9 @@ const partnerApplicationSchema = new Schema<IPartnerApplication>(
     gender: { type: String, enum: ['male', 'female', 'other'], required: true },
     dob: { type: String, required: true },
     bio: { type: String, required: true },
+    description: { type: String, required: true },
+    avatarUrl: { type: String },
+    interests: { type: [{ type: String }], default: [] },
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],

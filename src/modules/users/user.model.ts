@@ -7,6 +7,7 @@ export interface IUser extends Document {
     displayName: string;
     avatarUrl: string;
     bio: string;
+    description: string;
     vibeTags: string[];
     languages: string[];
     location?: {
@@ -41,6 +42,7 @@ const userSchema = new Schema<IUser>(
       displayName: { type: String, default: '' },
       avatarUrl: { type: String, default: '' },
       bio: { type: String, default: '' },
+      description: { type: String, default: '' },
       vibeTags: { type: [{ type: String }], default: [], index: true }, // Multikey index
       languages: { type: [{ type: String }], default: [] },
       location: {

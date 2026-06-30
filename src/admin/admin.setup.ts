@@ -32,6 +32,7 @@ export const setupAdmin = async (app: FastifyInstance) => {
         options: {
           properties: {
             languages: { type: 'string', isArray: true },
+            interests: { type: 'string', isArray: true },
           },
           actions: {
             approve: {
@@ -43,10 +44,16 @@ export const setupAdmin = async (app: FastifyInstance) => {
                 // Update the application status
                 await record.update({ status: 'approved' });
                 
-                // Find the associated user and update their status
+                // Find the associated user and update their profile
                 await User.findByIdAndUpdate(record.param('userId'), {
                   'settings.isListener': true,
                   'settings.isVerified': true,
+                  'profile.displayName': record.param('realName'),
+                  'profile.languages': record.param('languages') || [],
+                  'profile.bio': record.param('bio') || '',
+                  'profile.description': record.param('description') || '',
+                  'profile.vibeTags': record.param('interests') || [],
+                  ...(record.param('avatarUrl') && { 'profile.avatarUrl': record.param('avatarUrl') }),
                 });
                 
                 return {
