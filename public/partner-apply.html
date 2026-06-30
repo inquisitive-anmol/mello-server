@@ -245,23 +245,38 @@
   tabUrl.addEventListener('click', (e) => { e.preventDefault(); switchPhotoType('url'); });
   tabUpload.addEventListener('click', (e) => { e.preventDefault(); switchPhotoType('upload'); });
 
-  // Image Upload Logic
-  document.getElementById('upload-btn').addEventListener('click', async () => {
-    const fileInput = document.getElementById('avatarFile');
-    const statusDiv = document.getElementById('upload-status');
-    const previewImg = document.getElementById('avatar-preview');
-    const hiddenUrlInput = document.getElementById('uploadedAvatarUrl');
+  const fileInput = document.getElementById('avatarFile');
+  const previewImg = document.getElementById('avatar-preview');
+  const statusDiv = document.getElementById('upload-status');
+  const hiddenUrlInput = document.getElementById('uploadedAvatarUrl');
 
+  // Preview Image when selected
+  fileInput.addEventListener('change', (e) => {
+    if (fileInput.files && fileInput.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        previewImg.src = e.target.result;
+        previewImg.style.display = 'block';
+      };
+      reader.readAsDataURL(fileInput.files[0]);
+      statusDiv.innerText = '';
+    } else {
+      previewImg.style.display = 'none';
+      previewImg.src = '';
+    }
+  });
+
+  async function uploadImage() {
     if (!fileInput.files || fileInput.files.length === 0) {
       statusDiv.innerText = 'Please select a file first.';
       statusDiv.style.color = 'red';
-      return;
+      return false;
     }
 
     if (!token) {
       statusDiv.innerText = 'Missing auth token. Cannot upload.';
       statusDiv.style.color = 'red';
-      return;
+      return false;
     }
 
     const formData = new FormData();
@@ -284,16 +299,22 @@
         statusDiv.innerText = 'Upload successful!';
         statusDiv.style.color = 'lime';
         hiddenUrlInput.value = data.url;
-        previewImg.src = data.url;
-        previewImg.style.display = 'block';
+        return true;
       } else {
         statusDiv.innerText = data.error || 'Upload failed.';
         statusDiv.style.color = 'red';
+        return false;
       }
     } catch (err) {
       statusDiv.innerText = 'Network error during upload.';
       statusDiv.style.color = 'red';
+      return false;
     }
+  }
+
+  // Handle explicit Upload button click
+  document.getElementById('upload-btn').addEventListener('click', async () => {
+    await uploadImage();
   });
 
   document.getElementById('partner-form').addEventListener('submit', async (e) => {
@@ -324,10 +345,21 @@
     if (currentPhotoType === 'upload') {
       finalAvatarUrl = document.getElementById('uploadedAvatarUrl').value;
       if (!finalAvatarUrl) {
-        alert("Please upload an image first or switch to Paste URL.");
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'Submit Application';
-        return;
+        // Automatically upload if they forgot to click the upload button
+        if (fileInput.files && fileInput.files.length > 0) {
+          const success = await uploadImage();
+          if (!success) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = 'Submit Application';
+            return;
+          }
+          finalAvatarUrl = document.getElementById('uploadedAvatarUrl').value;
+        } else {
+          alert("Please upload an image first or switch to Paste URL.");
+          submitBtn.disabled = false;
+          submitBtn.innerText = 'Submit Application';
+          return;
+        }
       }
     }
 
