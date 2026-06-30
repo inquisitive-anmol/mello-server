@@ -17,10 +17,22 @@ export const setupAdmin = async (app: FastifyInstance) => {
 
   const adminOptions = {
     resources: [
-      User,
+      {
+        resource: User,
+        options: {
+          properties: {
+            'profile.vibeTags': { type: 'string', isArray: true },
+            'profile.languages': { type: 'string', isArray: true },
+            likedBy: { type: 'string', isArray: true },
+          },
+        },
+      },
       {
         resource: PartnerApplication,
         options: {
+          properties: {
+            languages: { type: 'string', isArray: true },
+          },
           actions: {
             approve: {
               actionType: 'record',
