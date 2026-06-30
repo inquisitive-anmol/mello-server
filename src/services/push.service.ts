@@ -1,6 +1,6 @@
-import { Expo, ExpoPushMessage } from 'expo-server-sdk';
-
-const expo = new Expo();
+// Lazily instantiated to avoid ESM require errors
+let expoInstance: any = null;
+let ExpoClass: any = null;
 
 /**
  * Sends a push notification to a single device via Expo Push Service.
@@ -17,12 +17,18 @@ export async function sendPushNotification({
   body: string;
   data?: Record<string, any>;
 }): Promise<void> {
-  if (!Expo.isExpoPushToken(pushToken)) {
+  if (!expoInstance) {
+    const sdk = await import('expo-server-sdk');
+    ExpoClass = sdk.Expo;
+    expoInstance = new ExpoClass();
+  }
+
+  if (!ExpoClass.isExpoPushToken(pushToken)) {
     console.warn(`[Push] Invalid Expo push token: ${pushToken}`);
     return;
   }
 
-  const message: ExpoPushMessage = {
+  const message: any = {
     to: pushToken,
     sound: 'default',
     title,
@@ -33,9 +39,9 @@ export async function sendPushNotification({
   };
 
   try {
-    const chunks = expo.chunkPushNotifications([message]);
+    const chunks = expoInstance.chunkPushNotifications([message]);
     for (const chunk of chunks) {
-      const receipts = await expo.sendPushNotificationsAsync(chunk);
+      const receipts = await expoInstance.sendPushNotificationsAsync(chunk);
       for (const receipt of receipts) {
         if (receipt.status === 'error') {
           console.error('[Push] Error sending notification:', receipt.message);
@@ -46,3 +52,4 @@ export async function sendPushNotification({
     console.error('[Push] Failed to send push notification:', err);
   }
 }
+

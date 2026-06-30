@@ -7,6 +7,7 @@ import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
 import { billingQueue } from '../../jobs/queue';
 import { RoomService } from './room.service';
 import { WalletService } from '../wallet/wallet.service';
+import { sendPushNotification } from '../../services/push.service';
 
 export async function getRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
   const { roomId } = request.params;
@@ -157,7 +158,6 @@ export async function initiateCall(
 
   // --- Gap 3: Push notification for background/closed app ---
   if (targetUser.pushToken) {
-    const { sendPushNotification } = await import('../../services/push.service');
     await sendPushNotification({
       pushToken: targetUser.pushToken,
       title: `${caller.profile.displayName || 'Someone'} is calling`,
