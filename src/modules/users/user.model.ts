@@ -41,8 +41,8 @@ const userSchema = new Schema<IUser>(
       displayName: { type: String, default: '' },
       avatarUrl: { type: String, default: '' },
       bio: { type: String, default: '' },
-      vibeTags: { type: [String], default: [], index: true }, // Multikey index
-      languages: { type: [String], default: [] },
+      vibeTags: { type: [{ type: String }], default: [], index: true }, // Multikey index
+      languages: { type: [{ type: String }], default: [] },
       location: {
         city: { type: String },
         country: { type: String },
@@ -66,7 +66,7 @@ const userSchema = new Schema<IUser>(
       enum: ['active', 'suspended', 'deactivated'],
       default: 'active',
     },
-    likedBy: { type: [String], default: [] },
+    likedBy: { type: [{ type: String }], default: [] },
   },
   { timestamps: true }
 );
