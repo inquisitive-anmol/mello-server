@@ -280,37 +280,54 @@
       return false;
     }
 
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
     statusDiv.innerText = 'Uploading...';
     statusDiv.style.color = 'var(--text-muted)';
     
-    try {
-      const response = await fetch('/api/v1/users/upload-avatar', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    
+    return new Promise((resolve) => {
+      reader.onload = async function(e) {
+        const base64Data = e.target.result;
+        try {
+          const response = await fetch('/api/v1/users/upload-avatar', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              fileBase64: base64Data
+            })
+          });
+          
+          const data = await response.json();
+          if (response.ok && data.url) {
+            statusDiv.innerText = 'Upload successful!';
+            statusDiv.style.color = 'lime';
+            hiddenUrlInput.value = data.url;
+            resolve(true);
+          } else {
+            statusDiv.innerText = 'Upload failed: ' + (data.error || 'Unknown error');
+            statusDiv.style.color = 'red';
+            resolve(false);
+          }
+        } catch (err) {
+          statusDiv.innerText = 'Upload error: ' + err.message;
+          statusDiv.style.color = 'red';
+          resolve(false);
+        }
+      };
       
-      const data = await response.json();
-      if (response.ok && data.url) {
-        statusDiv.innerText = 'Upload successful!';
-        statusDiv.style.color = 'lime';
-        hiddenUrlInput.value = data.url;
-        return true;
-      } else {
-        statusDiv.innerText = data.error || 'Upload failed.';
+      reader.onerror = function() {
+        statusDiv.innerText = 'Failed to read file.';
         statusDiv.style.color = 'red';
-        return false;
-      }
-    } catch (err) {
-      statusDiv.innerText = 'Network error during upload.';
-      statusDiv.style.color = 'red';
-      return false;
-    }
+        resolve(false);
+      };
+      
+      reader.readAsDataURL(file);
+    });
   }
 
   // Handle explicit Upload button click
