@@ -76,7 +76,7 @@ export async function buildApp() {
     
     // Register multipart inside the API scope so it's available to all our routes
     // but DOES NOT conflict with AdminJS registering it on the global app scope
-    api.register(multipart, {
+    await api.register(multipart, {
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB limit
       }

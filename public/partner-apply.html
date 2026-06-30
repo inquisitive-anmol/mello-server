@@ -207,7 +207,8 @@
   // Handle checkbox UI toggling
   document.querySelectorAll('.checkbox-item').forEach(item => {
     item.addEventListener('change', (e) => {
-      if (e.target.children[0].checked) {
+      // e.target is the <input type="checkbox"> element
+      if (e.target.checked) {
         item.classList.add('selected');
       } else {
         item.classList.remove('selected');
