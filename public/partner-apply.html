@@ -129,8 +129,23 @@
     </div>
 
     <div class="form-group">
-      <label for="avatarUrl">Profile Photo URL *</label>
-      <input type="text" id="avatarUrl" required placeholder="https://example.com/photo.jpg">
+      <label>Profile Photo *</label>
+      <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+        <label class="checkbox-item selected" id="tab-url" style="flex: 1; text-align: center;"><input type="radio" name="photoType" value="url" checked> Paste URL</label>
+        <label class="checkbox-item" id="tab-upload" style="flex: 1; text-align: center;"><input type="radio" name="photoType" value="upload"> Upload Image</label>
+      </div>
+      
+      <div id="url-input-group">
+        <input type="text" id="avatarUrl" required placeholder="https://example.com/photo.jpg">
+      </div>
+      
+      <div id="upload-input-group" style="display: none; flex-direction: column; gap: 10px;">
+        <input type="file" id="avatarFile" accept="image/*" style="background: transparent; border: 1px dashed var(--border); padding: 20px; text-align: center; cursor: pointer;">
+        <button type="button" id="upload-btn" style="background-color: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 10px; border-radius: 8px; cursor: pointer; font-weight: bold;">Upload Now</button>
+        <div id="upload-status" style="font-size: 12px; color: var(--text-muted); text-align: center;"></div>
+        <img id="avatar-preview" src="" alt="Avatar Preview" style="display: none; width: 100px; height: 100px; border-radius: 50px; object-fit: cover; margin: 0 auto; border: 2px solid var(--primary);">
+        <input type="hidden" id="uploadedAvatarUrl">
+      </div>
     </div>
     
     <div class="form-group">
@@ -160,13 +175,8 @@
     </div>
 
     <div class="form-group">
-      <label for="bio">Short Bio (Headline) *</label>
-      <input type="text" id="bio" required placeholder="A short catchy line about yourself">
-    </div>
-
-    <div class="form-group">
-      <label for="description">Detailed Description *</label>
-      <textarea id="description" required placeholder="Tell us more about yourself and why you'd be a great partner..."></textarea>
+      <label for="bio">Bio *</label>
+      <textarea id="bio" required placeholder="Tell us about yourself..."></textarea>
     </div>
 
     <div class="form-group">
@@ -208,6 +218,84 @@
   const urlParams = new URLSearchParams(window.location.search);
   const token = urlParams.get('token');
 
+  // Photo Type Toggle Logic
+  const tabUrl = document.getElementById('tab-url');
+  const tabUpload = document.getElementById('tab-upload');
+  const urlInputGroup = document.getElementById('url-input-group');
+  const uploadInputGroup = document.getElementById('upload-input-group');
+  let currentPhotoType = 'url';
+
+  function switchPhotoType(type) {
+    currentPhotoType = type;
+    if (type === 'url') {
+      tabUrl.classList.add('selected');
+      tabUpload.classList.remove('selected');
+      urlInputGroup.style.display = 'block';
+      uploadInputGroup.style.display = 'none';
+      document.getElementById('avatarUrl').required = true;
+    } else {
+      tabUpload.classList.add('selected');
+      tabUrl.classList.remove('selected');
+      urlInputGroup.style.display = 'none';
+      uploadInputGroup.style.display = 'flex';
+      document.getElementById('avatarUrl').required = false;
+    }
+  }
+
+  tabUrl.addEventListener('click', (e) => { e.preventDefault(); switchPhotoType('url'); });
+  tabUpload.addEventListener('click', (e) => { e.preventDefault(); switchPhotoType('upload'); });
+
+  // Image Upload Logic
+  document.getElementById('upload-btn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('avatarFile');
+    const statusDiv = document.getElementById('upload-status');
+    const previewImg = document.getElementById('avatar-preview');
+    const hiddenUrlInput = document.getElementById('uploadedAvatarUrl');
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+      statusDiv.innerText = 'Please select a file first.';
+      statusDiv.style.color = 'red';
+      return;
+    }
+
+    if (!token) {
+      statusDiv.innerText = 'Missing auth token. Cannot upload.';
+      statusDiv.style.color = 'red';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    statusDiv.innerText = 'Uploading...';
+    statusDiv.style.color = 'var(--text-muted)';
+    
+    try {
+      const response = await fetch('/api/v1/users/upload-avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.url) {
+        statusDiv.innerText = 'Upload successful!';
+        statusDiv.style.color = 'lime';
+        hiddenUrlInput.value = data.url;
+        previewImg.src = data.url;
+        previewImg.style.display = 'block';
+      } else {
+        statusDiv.innerText = data.error || 'Upload failed.';
+        statusDiv.style.color = 'red';
+      }
+    } catch (err) {
+      statusDiv.innerText = 'Network error during upload.';
+      statusDiv.style.color = 'red';
+    }
+  });
+
   document.getElementById('partner-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -231,13 +319,27 @@
       return;
     }
 
+    // Determine the avatar URL based on selected tab
+    let finalAvatarUrl = document.getElementById('avatarUrl').value;
+    if (currentPhotoType === 'upload') {
+      finalAvatarUrl = document.getElementById('uploadedAvatarUrl').value;
+      if (!finalAvatarUrl) {
+        alert("Please upload an image first or switch to Paste URL.");
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Submit Application';
+        return;
+      }
+    }
+
+    const bioValue = document.getElementById('bio').value;
+
     const payload = {
-      name: document.getElementById('realName').value, // wait! user.controller checks for `name`, mapping it to realName
-      avatarUrl: document.getElementById('avatarUrl').value,
+      name: document.getElementById('realName').value,
+      avatarUrl: finalAvatarUrl,
       gender: document.getElementById('gender').value,
       dob: document.getElementById('dob').value,
-      bio: document.getElementById('bio').value,
-      description: document.getElementById('description').value,
+      bio: bioValue,
+      description: bioValue,
       languages,
       interests
     };
