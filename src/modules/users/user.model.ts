@@ -30,6 +30,7 @@ export interface IUser extends Document {
   };
   status: 'active' | 'suspended' | 'deactivated';
   likedBy: string[];
+  pushToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +70,7 @@ const userSchema = new Schema<IUser>(
       default: 'active',
     },
     likedBy: { type: [{ type: String }], default: [] },
+    pushToken: { type: String, default: null },
   },
   { timestamps: true }
 );

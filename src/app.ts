@@ -35,6 +35,13 @@ export async function buildApp() {
     timeWindow: '1 minute'
   });
 
+  // Register multipart at root level so it's available in all nested route plugins
+  app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    }
+  });
+
 
   app.register(fastifyStatic, {
     root: path.join(process.cwd(), 'uploads'),
@@ -72,11 +79,6 @@ export async function buildApp() {
 
   // Routes
   app.register(async (api) => {
-    api.register(multipart, {
-      limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB limit
-      }
-    });
 
     api.register(authRoutes, { prefix: '/auth' });
     api.register(userRoutes, { prefix: '/users' });

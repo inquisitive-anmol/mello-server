@@ -12,6 +12,7 @@ export const SOCKET_EVENTS = {
   CALL_INCOMING: 'call:incoming',
   CALL_CONNECTED: 'call:connected',
   CALL_ENDED: 'call:ended',
+  CALL_TIMEOUT: 'call:timeout',
   COIN_BALANCE_UPDATE: 'coin:balance-update',
   PRESENCE_UPDATE: 'presence:update',
 } as const;

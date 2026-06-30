@@ -153,7 +153,7 @@ export class DiscoveryService {
   }
 
   static async toggleLike(listenerId: string, myUserId: string) {
-    const user = await User.findOne({ clerkId: listenerId });
+    const user = await User.findById(listenerId);
     if (!user) throw new Error('Listener not found');
 
     const index = user.likedBy.indexOf(myUserId);

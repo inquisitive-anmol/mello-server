@@ -29,6 +29,7 @@ export function initSocketServer(app: FastifyInstance) {
 
   io.on('connection', (socket: Socket) => {
     logger.info({ socketId: socket.id, userId: socket.data.userId }, 'Socket connected');
+    // Always join the personal userId room — handles both initial connect and reconnects
     socket.join(socket.data.userId);
 
     registerPresenceHandlers(io, socket);
@@ -36,8 +37,12 @@ export function initSocketServer(app: FastifyInstance) {
     registerCallHandlers(io, socket);
     registerChatHandlers(io, socket);
 
-    socket.on('disconnect', () => {
-      logger.info({ socketId: socket.id, userId: socket.data.userId }, 'Socket disconnected');
+    // Gap 2: On client-side reconnect, the socket reconnects and fires 'connection' again
+    // with a new socket ID, but the userId is preserved via auth middleware.
+    // socket.join above guarantees they're back in their userId room immediately.
+
+    socket.on('disconnect', (reason) => {
+      logger.info({ socketId: socket.id, userId: socket.data.userId, reason }, 'Socket disconnected');
       // Presence disconnect logic is handled inside presence.handler via disconnecting event
     });
   });

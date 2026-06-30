@@ -142,23 +142,57 @@ export async function initiateCall(
   }
 
   const result = await RoomService.createDirectRoom(caller._id.toString(), targetUser._id.toString(), billingRate);
-
-  const io = getIO();
-  io.to(targetUser._id.toString()).emit(SOCKET_EVENTS.CALL_INCOMING, {
-    roomId: result.room._id.toString(),
+  const roomId = result.room._id.toString();
+  const callPayload = {
+    roomId,
     callerId: caller._id.toString(),
     callerName: caller.profile.displayName || 'Unknown User',
     callerImage: caller.profile.avatarUrl || '',
     type,
-    rateCoins: billingRate
-  });
+    rateCoins: billingRate,
+  };
+
+  const io = getIO();
+  io.to(targetUser._id.toString()).emit(SOCKET_EVENTS.CALL_INCOMING, callPayload);
+
+  // --- Gap 3: Push notification for background/closed app ---
+  if (targetUser.pushToken) {
+    const { sendPushNotification } = await import('../../services/push.service');
+    await sendPushNotification({
+      pushToken: targetUser.pushToken,
+      title: `${caller.profile.displayName || 'Someone'} is calling`,
+      body: type === 'video' ? 'Incoming video call on Mello' : 'Incoming audio call on Mello',
+      data: callPayload,
+    });
+  }
+
+  // --- Gap 1: 30-second call timeout ---
+  setTimeout(async () => {
+    try {
+      const room = await Room.findById(roomId);
+      // Only auto-reject if still waiting (no one accepted/rejected yet)
+      if (room && room.status === 'waiting') {
+        room.status = 'ended';
+        room.endedAt = new Date();
+        await room.save();
+
+        // Notify listener to dismiss the incoming call UI
+        io.to(targetUser._id.toString()).emit(SOCKET_EVENTS.CALL_TIMEOUT, { roomId });
+        // Notify caller that call timed out
+        io.to(caller._id.toString()).emit(SOCKET_EVENTS.CALL_ENDED, { roomId, reason: 'timeout' });
+      }
+    } catch (err) {
+      console.error('[Call timeout] Error auto-rejecting timed-out call:', err);
+    }
+  }, 30_000);
 
   return reply.send({ 
     success: true, 
-    roomId: result.room._id.toString(), 
+    roomId, 
     callerToken: result.callerToken 
   });
 }
+
 
 export async function acceptCall(
   request: FastifyRequest<{ Params: { roomId: string } }>,

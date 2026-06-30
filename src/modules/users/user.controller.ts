@@ -101,3 +101,18 @@ export async function applyPartner(request: FastifyRequest, reply: FastifyReply)
 
   return reply.send({ success: true, application });
 }
+
+export async function savePushToken(
+  request: FastifyRequest<{ Body: { pushToken: string } }>,
+  reply: FastifyReply
+) {
+  const clerkId = (request as any).auth?.userId;
+  const { pushToken } = request.body as any;
+
+  if (!pushToken) {
+    return reply.status(400).send({ error: 'pushToken is required' });
+  }
+
+  await User.findByIdAndUpdate(clerkId, { $set: { pushToken } });
+  return reply.send({ success: true });
+}
