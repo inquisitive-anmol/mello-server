@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { User } from './user.model';
 import { PartnerApplication } from './partner-application.model';
 import { redis } from '../../config/redis';
+import { Types } from 'mongoose';
 
 export async function getMe(request: FastifyRequest, reply: FastifyReply) {
   const clerkId = (request as any).auth.userId;
@@ -43,7 +44,13 @@ export async function updateMe(request: FastifyRequest, reply: FastifyReply) {
 
 export async function getUserProfile(request: FastifyRequest<{ Params: { username: string } }>, reply: FastifyReply) {
   const { username } = request.params;
-  const user = await User.findOne({ username });
+  
+  let query: any = { username };
+  if (Types.ObjectId.isValid(username)) {
+    query = { $or: [{ username }, { _id: username }] };
+  }
+
+  const user = await User.findOne(query);
   if (!user) return reply.status(404).send({ error: 'User not found' });
   
   return reply.send(user);
