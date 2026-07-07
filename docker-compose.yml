@@ -63,12 +63,9 @@ services:
       # Must match rtc.port_range_start / port_range_end in livekit.yaml
       - "50000-50200:50000-50200/udp"
     environment:
-      # Key map passed as env var (LiveKit reads LIVEKIT_KEYS automatically)
+      # Key map — LiveKit reads this automatically (format: "key: secret")
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       LIVEKIT_REDIS_ADDRESS: "redis:6379"
-      # These are also passed individually so livekit.yaml can interpolate ${LIVEKIT_API_KEY}
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
     volumes:
       # Mount our config file (read-only) — this enables webhook delivery
       - ./livekit.yaml:/etc/livekit.yaml:ro
