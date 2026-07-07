@@ -11,10 +11,12 @@ import { registerChatHandlers } from './handlers/chat.handler';
 
 let io: SocketIOServer;
 
+import { env } from '../config/env';
+
 export function initSocketServer(app: FastifyInstance) {
   io = new SocketIOServer(app.server, {
     cors: {
-      origin: '*',
+      origin: env.CORS_ORIGINS,
       methods: ['GET', 'POST']
     }
   });

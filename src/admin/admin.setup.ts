@@ -34,10 +34,12 @@ export const setupAdmin = async (app: FastifyInstance) => {
             languages: { type: 'string', isArray: true },
             interests: { type: 'string', isArray: true },
           },
+          listProperties: ['realName', 'gender', 'languages', 'status', 'createdAt'],
           actions: {
             approve: {
               actionType: 'record',
               icon: 'Check',
+              component: false,
               handler: async (request: any, response: any, context: any) => {
                 const { record } = context;
                 

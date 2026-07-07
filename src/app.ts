@@ -16,6 +16,7 @@ import { matchRoutes } from './modules/match/match.routes';
 
 import { roomRoutes } from './modules/rooms/room.routes';
 import { chatRoutes } from './modules/chat/chat.routes';
+import { livekitWebhook } from './modules/rooms/webhook.controller';
 
 import { setupAdmin } from './admin/admin.setup';
 
@@ -27,12 +28,25 @@ export async function buildApp() {
 
   // Plugins
   app.register(cors, {
-    origin: '*',
+    origin: env.CORS_ORIGINS,
   });
 
   app.register(require('@fastify/rate-limit'), {
     max: 100, // 100 requests
     timeWindow: '1 minute'
+  });
+
+  // C-1: Capture rawBody for LiveKit webhook signature verification.
+  // LiveKit sends the payload as a plain-text signed JWT; we need the exact bytes
+  // that were signed to run WebhookReceiver.receive() successfully.
+  app.addContentTypeParser('application/webhook+json', { parseAs: 'string' }, (req, body, done) => {
+    (req as any).rawBody = body;
+    done(null, body);
+  });
+  // Also handle plain text format that LiveKit may use
+  app.addContentTypeParser('text/plain', { parseAs: 'string' }, (req, body, done) => {
+    (req as any).rawBody = body;
+    done(null, body);
   });
 
 
@@ -89,6 +103,9 @@ export async function buildApp() {
     api.register(matchRoutes, { prefix: '/match' });
     api.register(roomRoutes, { prefix: '/rooms' });
     api.register(chatRoutes, { prefix: '/chat' });
+
+    // C-1: LiveKit webhook — no auth middleware, the signed JWT body IS the auth
+    api.post('/webhooks/livekit', livekitWebhook);
   }, { prefix: `/api/${env.API_VERSION}` });
 
   await setupAdmin(app);

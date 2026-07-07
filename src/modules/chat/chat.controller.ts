@@ -3,23 +3,17 @@ import { Conversation, Message } from './chat.model';
 import { User } from '../users/user.model';
 
 export async function initConversation(
-  request: FastifyRequest<{ Body: { myUserId: string; targetUserId: string } }>,
+  // A-2: myUserId is no longer accepted from the body — derived from the verified JWT
+  request: FastifyRequest<{ Body: { targetUserId: string } }>,
   reply: FastifyReply
 ) {
   try {
-    const { myUserId, targetUserId } = request.body;
+    // A-2: Always use the authenticated user's ID from the JWT
+    const myUserId = (request as any).auth.userId;
+    const { targetUserId } = request.body;
 
-    let me = await User.findById(myUserId);
-    
-    // Auto-create dev user for local testing
-    if (!me && myUserId === 'dev_user_1') {
-      me = await User.create({
-        phoneNumber: 'dev_user_1',
-        username: 'dev_user_1',
-        profile: { displayName: 'Dev User' },
-        status: 'active'
-      });
-    }
+    const me = await User.findById(myUserId);
+    if (!me) return reply.status(404).send({ error: 'Authenticated user not found' });
 
     let target = await User.findById(targetUserId);
     
@@ -28,8 +22,8 @@ export async function initConversation(
       target = await User.findOne({ phoneNumber: `seed_${targetUserId}` });
     }
 
-    if (!me || !target) {
-      return reply.status(404).send({ error: `User not found: me=${!!me}, target=${!!target}` });
+    if (!target) {
+      return reply.status(404).send({ error: `Target user not found: ${targetUserId}` });
     }
 
     // Find existing conversation
@@ -55,16 +49,48 @@ export async function initConversation(
 }
 
 export async function getMessages(
-  request: FastifyRequest<{ Params: { conversationId: string } }>,
+  request: FastifyRequest<{ Params: { conversationId: string }, Querystring: { page?: string; limit?: string; before?: string } }>,
   reply: FastifyReply
 ) {
   try {
     const { conversationId } = request.params;
-    const messages = await Message.find({ conversationId })
-      .sort({ createdAt: 1 }) // Chronological order
-      .limit(50); // Fetch last 50 for now
+    const myUserId = (request as any).auth.userId;
 
-    return reply.send({ data: messages });
+    // C-2: Verify membership before returning messages
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+
+    const isParticipant = conversation.participants.some(
+      (p) => p.toString() === myUserId
+    );
+    if (!isParticipant) {
+      return reply.status(403).send({ error: 'You are not a participant in this conversation' });
+    }
+
+    // C-2: Honour page + limit query params (defaults: page=1, limit=30)
+    const page = Math.max(1, parseInt(request.query.page || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(request.query.limit || '30', 10)));
+    const skip = (page - 1) * limit;
+
+    const [messages, total] = await Promise.all([
+      Message.find({ conversationId })
+        .sort({ createdAt: -1 }) // newest first so we can skip/limit efficiently
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Message.countDocuments({ conversationId }),
+    ]);
+
+    return reply.send({
+      data: messages.reverse(), // return in chronological order to the client
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasMore: skip + limit < total,
+      },
+    });
   } catch (error: any) {
     return reply.status(500).send({ error: error.message });
   }

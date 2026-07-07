@@ -8,8 +8,13 @@ const envSchema = z.object({
   PORT: z.string().default('3001').transform(Number),
   API_VERSION: z.string().default('v1'),
   
+  CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:8081,https://mello.zenflows.in').transform(val => val.split(',').map(s => s.trim())),
+  
+  
   MONGODB_URI: z.string().url(),
   REDIS_URL: z.string().url(),
+  
+  JWT_SECRET: z.string().min(1),
   
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),

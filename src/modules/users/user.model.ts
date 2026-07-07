@@ -30,6 +30,8 @@ export interface IUser extends Document {
   };
   status: 'active' | 'suspended' | 'deactivated';
   likedBy: string[];
+  // B-1: List of user IDs this user has blocked
+  blockedUsers: string[];
   pushToken?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -70,6 +72,8 @@ const userSchema = new Schema<IUser>(
       default: 'active',
     },
     likedBy: { type: [{ type: String }], default: [] },
+    // B-1: IDs of users this user has blocked — indexed for O(1) membership check
+    blockedUsers: { type: [{ type: String }], default: [], index: true },
     pushToken: { type: String, default: null },
   },
   { timestamps: true }
@@ -79,3 +83,4 @@ const userSchema = new Schema<IUser>(
 userSchema.index({ 'settings.isListener': 1, 'settings.isAvailable': 1 });
 
 export const User = mongoose.model<IUser>('User', userSchema);
+

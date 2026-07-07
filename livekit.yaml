@@ -1,0 +1,24 @@
+# LiveKit Server Configuration
+# This file is mounted into the livekit container at /etc/livekit.yaml
+# env vars (e.g. ${LIVEKIT_API_KEY}) are substituted at runtime by LiveKit's Viper config parser.
+
+# --- Webhook ---
+# LiveKit will POST signed JWT events to this URL on every room/participant lifecycle event.
+# The api_key must match one of the keys in LIVEKIT_KEYS env var.
+webhook:
+  api_key: "${LIVEKIT_API_KEY}"
+  urls:
+    - https://mello.zenflows.in/api/v1/webhooks/livekit
+
+# --- RTC / Media ---
+# UDP port range for WebRTC media. MUST match what is exposed in docker-compose.yml ports.
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  # use_external_ip: true  # uncomment if LIVEKIT_NODE_IP auto-detection fails
+
+# --- Logging ---
+logging:
+  level: info
+  json: true

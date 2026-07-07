@@ -4,7 +4,7 @@ import { Review } from './review.model';
 import { User } from '../users/user.model';
 import { getIO } from '../../realtime/socket.server';
 import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
-import { billingQueue } from '../../jobs/queue';
+import { billingQueue, callTimeoutQueue } from '../../jobs/queue';
 import { RoomService } from './room.service';
 import { WalletService } from '../wallet/wallet.service';
 import { sendPushNotification } from '../../services/push.service';
@@ -17,19 +17,41 @@ export async function getRoom(request: FastifyRequest<{ Params: { roomId: string
 }
 
 export async function endRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
+  const clerkId = (request as any).auth?.userId;
   const { roomId } = request.params;
   
   const room = await Room.findById(roomId);
   if (!room) return reply.status(404).send({ error: 'Room not found' });
 
+  // A-5: Verify the requester is a participant in this room
+  const caller = await User.findById(clerkId);
+  if (!caller) return reply.status(404).send({ error: 'User not found' });
+
+  const isParticipant = room.participants.some(p => p.userId.equals(caller._id));
+  if (!isParticipant) {
+    return reply.status(403).send({ error: 'You are not a participant in this room' });
+  }
+
   if (room.status === 'ended') {
     return reply.send({ message: 'Room already ended' });
   }
 
+  const wasActive = room.status === 'active';
   room.status = 'ended';
   room.endedAt = new Date();
-  room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
+  // If the room never became active (missed call), totalDuration stays 0
+  room.totalDuration = wasActive
+    ? Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000)
+    : 0;
+
+  // C-4: Set leftAt for the participant who initiated the hang-up
+  const hangingUpParticipant = room.participants.find(p => p.userId.equals(caller._id));
+  if (hangingUpParticipant) {
+    hangingUpParticipant.leftAt = new Date();
+  }
+
   await room.save();
+
 
   // Remove billing job for this room
   await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
@@ -135,6 +157,14 @@ export async function initiateCall(
   const targetUser = await User.findById(targetUserId);
   if (!targetUser) return reply.status(404).send({ error: 'Target user not found' });
 
+  // B-1: Check if caller blocked target or target blocked caller
+  if (caller.blockedUsers?.includes(targetUser._id.toString())) {
+    return reply.status(403).send({ error: 'You have blocked this user' });
+  }
+  if (targetUser.blockedUsers?.includes(caller._id.toString())) {
+    return reply.status(403).send({ error: 'You cannot call this user' });
+  }
+
   const billingRate = targetUser.settings.callRate || 8;
 
   const balance = await WalletService.getBalance(caller._id.toString());
@@ -166,25 +196,18 @@ export async function initiateCall(
     });
   }
 
-  // --- Gap 1: 30-second call timeout ---
-  setTimeout(async () => {
-    try {
-      const room = await Room.findById(roomId);
-      // Only auto-reject if still waiting (no one accepted/rejected yet)
-      if (room && room.status === 'waiting') {
-        room.status = 'ended';
-        room.endedAt = new Date();
-        await room.save();
-
-        // Notify listener to dismiss the incoming call UI
-        io.to(targetUser._id.toString()).emit(SOCKET_EVENTS.CALL_TIMEOUT, { roomId });
-        // Notify caller that call timed out
-        io.to(caller._id.toString()).emit(SOCKET_EVENTS.CALL_ENDED, { roomId, reason: 'timeout' });
-      }
-    } catch (err) {
-      console.error('[Call timeout] Error auto-rejecting timed-out call:', err);
+  // A-7: Use a BullMQ delayed job for the 30-second timeout instead of setTimeout.
+  // This survives server restarts — orphaned "waiting" rooms are cleaned up reliably.
+  await callTimeoutQueue.add(
+    'autoReject',
+    { roomId, callerId: caller._id.toString(), calleeId: targetUser._id.toString() },
+    {
+      delay: 30_000,
+      jobId: `call-timeout:${roomId}`,
+      removeOnComplete: true,
+      removeOnFail: true,
     }
-  }, 30_000);
+  );
 
   return reply.send({ 
     success: true, 
@@ -212,8 +235,27 @@ export async function acceptCall(
   room.startedAt = new Date();
   await room.save();
 
-  // Need to fetch tokens again or simply respond so the listener joins
-  // For the caller, emit CALL_CONNECTED
+  // Listener token
+  const listenerToken = await RoomService.generateRtcToken(room.channelId, clerkId);
+
+  // Start billing job BEFORE emitting connected event
+  try {
+    await billingQueue.add('charge', { roomId: room._id.toString() }, {
+      repeat: { 
+        every: 60000,
+        jobId: `billing:${room._id.toString()}`
+      }
+    });
+  } catch (err) {
+    console.error('Failed to start billing queue for call (Redis down?):', err);
+    // Revert room status
+    room.status = 'ended';
+    room.endedAt = new Date();
+    await room.save();
+    return reply.status(500).send({ error: 'Failed to start billing for call' });
+  }
+
+  // For the caller, emit CALL_CONNECTED now that everything is set up successfully
   const callerParticipant = room.participants.find(p => p.role === 'caller');
   if (callerParticipant) {
     const io = getIO();
@@ -222,17 +264,6 @@ export async function acceptCall(
     });
   }
 
-  // Listener token
-  const listenerToken = await RoomService.generateRtcToken(room.channelId, clerkId);
-
-  // Start billing job
-  await billingQueue.add('charge', { roomId: room._id.toString() }, {
-    repeat: { 
-      every: 60000,
-      jobId: `billing:${room._id.toString()}`
-    }
-  });
-
   return reply.send({ success: true, listenerToken });
 }
 
@@ -240,16 +271,36 @@ export async function rejectCall(
   request: FastifyRequest<{ Params: { roomId: string } }>,
   reply: FastifyReply
 ) {
+  const clerkId = (request as any).auth?.userId;
   const { roomId } = request.params;
   const room = await Room.findById(roomId);
   
   if (!room) return reply.status(404).send({ error: 'Room not found' });
 
+  // A-5: Verify the requester is the intended callee (listener role)
+  const rejecter = await User.findById(clerkId);
+  if (!rejecter) return reply.status(404).send({ error: 'User not found' });
+
+  const listenerParticipant = room.participants.find(p => p.role === 'listener');
+  if (!listenerParticipant || !listenerParticipant.userId.equals(rejecter._id)) {
+    return reply.status(403).send({ error: 'Only the call recipient can reject this call' });
+  }
+
   room.status = 'ended';
   room.endedAt = new Date();
+
+  // C-4: Set leftAt for the rejecting listener
+  const listenerEntry = room.participants.find(p => p.userId.equals(rejecter._id));
+  if (listenerEntry) {
+    listenerEntry.leftAt = new Date();
+  }
+
   await room.save();
 
-  // Safely attempt to remove billing job if it existed
+  // Cancel the pending timeout job now that the call has been explicitly rejected
+  await callTimeoutQueue.remove(`call-timeout:${roomId}`).catch(() => {});
+
+  // Safely attempt to remove billing job if it somehow existed
   await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
 
   const callerParticipant = room.participants.find(p => p.role === 'caller');

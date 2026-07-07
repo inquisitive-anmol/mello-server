@@ -1,14 +1,21 @@
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { env } from '../../config/env';
 import { Room } from './room.model';
 import { Types } from 'mongoose';
 import crypto from 'crypto';
 
+// C-6: RoomServiceClient for explicit room lifecycle management
+const roomServiceClient = new RoomServiceClient(
+  env.LIVEKIT_URL,
+  env.LIVEKIT_API_KEY,
+  env.LIVEKIT_API_SECRET
+);
+
 export class RoomService {
   static async generateRtcToken(channelId: string, userId: string): Promise<string> {
     const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
       identity: userId,
-      ttl: '1h', // Token valid for 1 hour
+      ttl: '5m', // B-4: Token valid for 5 minutes instead of 1 hour
     });
     
     at.addGrant({
@@ -19,6 +26,29 @@ export class RoomService {
     });
     
     return await at.toJwt();
+  }
+
+  /**
+   * C-6: Explicitly create the LiveKit room with lifecycle constraints.
+   *  - emptyTimeout: 120s — room is destroyed if nobody joins within 2 minutes
+   *    (covers the 30-second call timeout + buffer for network delays)
+   *  - maxParticipants: 2 — enforced at the LiveKit layer, prevents gate-crashing
+   *  - metadata: links back to our DB room ID for webhook processing
+   */
+  static async createLiveKitRoom(channelId: string, dbRoomId: string): Promise<void> {
+    try {
+      await roomServiceClient.createRoom({
+        name: channelId,
+        emptyTimeout: 120,     // seconds: auto-close if nobody joins within 2 minutes
+        maxParticipants: 2,    // caller + listener only
+        metadata: JSON.stringify({ dbRoomId }),
+      });
+    } catch (err: any) {
+      // If the room already exists (duplicate create), that's fine
+      if (!err?.message?.includes('already exists')) {
+        throw err;
+      }
+    }
   }
 
   static async createMatchRoom(
@@ -38,6 +68,9 @@ export class RoomService {
         { userId: new Types.ObjectId(listenerId), role: 'listener' }
       ]
     });
+
+    // C-6: Create the LiveKit room explicitly before minting tokens
+    await this.createLiveKitRoom(channelId, room._id.toString());
 
     return {
       room,
@@ -64,6 +97,9 @@ export class RoomService {
         { userId: new Types.ObjectId(listenerId), role: 'listener' }
       ]
     });
+
+    // C-6: Create the LiveKit room explicitly before minting tokens
+    await this.createLiveKitRoom(channelId, room._id.toString());
 
     return {
       room,

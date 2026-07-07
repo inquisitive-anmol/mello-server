@@ -11,7 +11,15 @@ export async function roomRoutes(app: FastifyInstance) {
   app.post('/:roomId/review', submitReview);
 
   // Direct Calling
-  app.post('/call/initiate', initiateCall);
+  // B-5: Rate limit to prevent call spam (max 5 calls per minute per user)
+  app.post('/call/initiate', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute'
+      }
+    } as any
+  }, initiateCall);
   app.post('/call/:roomId/accept', acceptCall);
   app.post('/call/:roomId/reject', rejectCall);
 }

@@ -51,15 +51,26 @@ services:
     image: livekit/livekit-server:latest
     container_name: mello-livekit
     restart: always
-    # Note: For production, set LIVEKIT_NODE_IP to your public IP in the .env file (or host environment)
-    command: --node-ip=${LIVEKIT_NODE_IP:-127.0.0.1}
+    # --config loads livekit.yaml (webhook, rtc port range, logging)
+    # --node-ip MUST be the VPS public IP so LiveKit advertises the correct ICE candidate
+    command: --config /etc/livekit.yaml --node-ip=${LIVEKIT_NODE_IP}
     ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
+      - "7880:7880"       # WebSocket signaling (HTTP/WS)
+      - "7881:7881"       # WebRTC TCP fallback
+      - "7882:7882/udp"   # TURN/UDP
+      # Full UDP media port range — required for WebRTC peer connections
+      # Must match rtc.port_range_start / port_range_end in livekit.yaml
+      - "50000-60000:50000-60000/udp"
     environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+      # Key map passed as env var (LiveKit reads LIVEKIT_KEYS automatically)
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       LIVEKIT_REDIS_ADDRESS: "redis:6379"
+      # These are also passed individually so livekit.yaml can interpolate ${LIVEKIT_API_KEY}
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET}"
+    volumes:
+      # Mount our config file (read-only) — this enables webhook delivery
+      - ./livekit.yaml:/etc/livekit.yaml:ro
     depends_on:
       redis:
         condition: service_healthy

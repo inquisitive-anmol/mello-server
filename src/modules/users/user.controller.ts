@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { User } from './user.model';
 import { PartnerApplication } from './partner-application.model';
+import { Report } from './report.model';
 import { redis } from '../../config/redis';
 import { Types } from 'mongoose';
 
@@ -50,7 +51,8 @@ export async function getUserProfile(request: FastifyRequest<{ Params: { usernam
     query = { $or: [{ username }, { _id: username }] };
   }
 
-  const user = await User.findOne(query);
+  // B-6: Exclude pushToken so we don't leak it to public clients
+  const user = await User.findOne(query).select('-pushToken');
   if (!user) return reply.status(404).send({ error: 'User not found' });
   
   return reply.send(user);
@@ -122,4 +124,34 @@ export async function savePushToken(
 
   await User.findByIdAndUpdate(clerkId, { $set: { pushToken } });
   return reply.send({ success: true });
+}
+
+export async function reportUser(
+  request: FastifyRequest<{ Params: { id: string }, Body: { reason: string, description?: string } }>,
+  reply: FastifyReply
+) {
+  const clerkId = (request as any).auth?.userId;
+  const reporter = await User.findById(clerkId);
+  if (!reporter) return reply.status(404).send({ error: 'User not found' });
+
+  const { id: reportedId } = request.params;
+  const { reason, description } = request.body;
+
+  if (!reason) {
+    return reply.status(400).send({ error: 'Reason is required' });
+  }
+
+  const reportedUser = await User.findById(reportedId);
+  if (!reportedUser) {
+    return reply.status(404).send({ error: 'Target user not found' });
+  }
+
+  const report = await Report.create({
+    reporterId: reporter._id,
+    reportedId: reportedUser._id,
+    reason,
+    description
+  });
+
+  return reply.send({ success: true, reportId: report._id });
 }

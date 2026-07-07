@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../../middleware/auth.middleware';
-import { getMe, updateMe, updateAvailability, applyPartner, getUserProfile, savePushToken } from './user.controller';
+import { getMe, updateMe, updateAvailability, applyPartner, getUserProfile, savePushToken, reportUser } from './user.controller';
 import { uploadAvatar } from './upload.controller';
 
 export async function userRoutes(app: FastifyInstance) {
@@ -19,4 +19,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   // Push notification token registration
   app.post('/push-token', savePushToken);
+
+  // User Reporting
+  app.post('/:id/report', reportUser);
 }

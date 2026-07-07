@@ -5,6 +5,7 @@ import { connectDB } from './config/database';
 import './jobs/matchmaking.worker';
 import './jobs/billing.worker';
 import './jobs/presence.worker';
+import './jobs/call-timeout.worker'; // A-7: Persistent delayed job for 30s call auto-reject
 
 import { initSocketServer } from './realtime/socket.server';
 

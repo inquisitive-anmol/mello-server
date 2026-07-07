@@ -19,7 +19,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mello_super_secret_jwt_key_2026') as { userId: string };
+    const decoded = jwt.verify(token, env.JWT_SECRET) as { userId: string };
 
     // Inject into request.auth to maintain compatibility with existing controllers
     (request as any).auth = { userId: decoded.userId };

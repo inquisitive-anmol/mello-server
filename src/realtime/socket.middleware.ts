@@ -19,7 +19,7 @@ export async function requireSocketAuth(socket: Socket, next: (err?: Error) => v
   try {
     const verifiedToken = jwt.verify(
       token, 
-      process.env.JWT_SECRET || 'mello_super_secret_jwt_key_2026'
+      env.JWT_SECRET
     ) as { userId: string };
 
     socket.data.userId = verifiedToken.userId;
