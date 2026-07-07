@@ -15,7 +15,7 @@ webhook:
 rtc:
   tcp_port: 7881
   port_range_start: 50000
-  port_range_end: 60000
+  port_range_end: 50200
   # use_external_ip: true  # uncomment if LIVEKIT_NODE_IP auto-detection fails
 
 # --- Logging ---

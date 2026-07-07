@@ -58,9 +58,10 @@ services:
       - "7880:7880"       # WebSocket signaling (HTTP/WS)
       - "7881:7881"       # WebRTC TCP fallback
       - "7882:7882/udp"   # TURN/UDP
-      # Full UDP media port range — required for WebRTC peer connections
+      # Reduced UDP media port range — 200 ports is sufficient for a small-scale app
+      # (each participant uses ~2-4 ports; 200 ports handles ~50 concurrent participants)
       # Must match rtc.port_range_start / port_range_end in livekit.yaml
-      - "50000-60000:50000-60000/udp"
+      - "50000-50200:50000-50200/udp"
     environment:
       # Key map passed as env var (LiveKit reads LIVEKIT_KEYS automatically)
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
