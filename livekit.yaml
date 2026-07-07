@@ -13,7 +13,7 @@
 #
 # api_key must match one of the keys defined in LIVEKIT_KEYS environment variable.
 webhook:
-  api_key: "REPLACE_WITH_YOUR_LIVEKIT_API_KEY"
+  api_key: ${LIVEKIT_API_KEY}
   urls:
     - https://mello.zenflows.in/api/v1/webhooks/livekit
 
