@@ -68,12 +68,15 @@ export function registerChatHandlers(io: Server, socket: Socket) {
         return;
       }
 
+      const targetRoom = io.sockets.adapter.rooms.get(targetId);
+      const isOnline = targetRoom && targetRoom.size > 0;
+
       // Create and persist the message
       const message = await Message.create({
         conversationId,
         senderId: userId,
         text,
-        status: 'sent'
+        status: isOnline ? 'delivered' : 'sent'
       });
 
       // Update conversation metadata and increment receiver's unread count atomically
@@ -93,8 +96,7 @@ export function registerChatHandlers(io: Server, socket: Socket) {
       });
 
       // B-8: Push notification fallback for offline users
-      const targetRoom = io.sockets.adapter.rooms.get(targetId);
-      if ((!targetRoom || targetRoom.size === 0) && target.pushToken) {
+      if (!isOnline && target.pushToken) {
         await sendPushNotification({
           pushToken: target.pushToken,
           title: `New message from ${sender.profile.displayName || sender.username}`,
@@ -127,6 +129,18 @@ export function registerChatHandlers(io: Server, socket: Socket) {
       await Conversation.findByIdAndUpdate(conversationId, {
         $set: { [`unreadCount.${userId}`]: 0 }
       });
+
+      // Update all messages in this conversation sent by the other person to 'read'
+      await Message.updateMany(
+        { conversationId, senderId: { $ne: userId }, status: { $ne: 'read' } },
+        { $set: { status: 'read' } }
+      );
+
+      // Notify the other participant that messages were read
+      const targetId = conversation.participants.map(p => p.toString()).find(p => p !== userId);
+      if (targetId) {
+        io.to(targetId).emit('MESSAGES_READ', { conversationId });
+      }
 
       socket.emit('UNREAD_RESET', { conversationId });
     } catch (err) {

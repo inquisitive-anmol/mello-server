@@ -26,7 +26,7 @@ export async function initConversation(
       return reply.status(404).send({ error: `Target user not found: ${targetUserId}` });
     }
 
-    if (me.blockedUsers?.includes(target._id) || target.blockedUsers?.includes(me._id)) {
+    if (me.blockedUsers?.includes(target._id.toString()) || target.blockedUsers?.includes(me._id.toString())) {
       return reply.status(403).send({ error: 'You cannot message this user due to blocking.' });
     }
 

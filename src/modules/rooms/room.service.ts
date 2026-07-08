@@ -3,7 +3,10 @@ import { env } from '../../config/env';
 import { Room } from './room.model';
 import { Types } from 'mongoose';
 import crypto from 'crypto';
-
+import { billingQueue, callTimeoutQueue } from '../../jobs/queue';
+import { getIO } from '../../realtime/socket.server';
+import { SOCKET_EVENTS } from '../../shared/constants/socket-events';
+import { logger } from '../../utils/logger';
 // C-6: RoomServiceClient for explicit room lifecycle management
 const roomServiceClient = new RoomServiceClient(
   env.LIVEKIT_URL,
@@ -105,5 +108,50 @@ export class RoomService {
       channelId,
       callerToken: await this.generateRtcToken(channelId, callerId)
     };
+  }
+
+  static async endRoom(roomId: string) {
+    const room = await Room.findById(roomId);
+    if (!room) return null;
+
+    if (room.status === 'ended') {
+      return room;
+    }
+
+    const wasActive = room.status === 'active';
+    room.status = 'ended';
+    room.endedAt = new Date();
+    room.totalDuration = wasActive
+      ? Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000)
+      : 0;
+    
+    await room.save();
+
+    if (room.billingRepeatKey) {
+      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+    }
+
+    await callTimeoutQueue.remove(`call-timeout:${roomId}`).catch(() => {});
+
+    try {
+      await roomServiceClient.deleteRoom(room.channelId);
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to delete room from LiveKit');
+    }
+
+    const io = getIO();
+    const eventPayload = { 
+      roomId, 
+      duration: room.totalDuration, 
+      reason: 'user_ended' 
+    };
+    
+    io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
+    
+    room.participants.forEach(p => {
+      io.to(p.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
+    });
+
+    return room;
   }
 }

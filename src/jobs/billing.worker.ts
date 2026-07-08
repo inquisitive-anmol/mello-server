@@ -24,8 +24,9 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
 
   if (room.status !== 'active') {
     logger.info({ roomId }, 'Room is no longer active, terminating billing job');
-    // We can't easily remove repeatable jobs from inside the job itself without the repeatJobKey
-    // Usually the service ending the room removes the repeatable job.
+    if (room.billingRepeatKey) {
+      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+    }
     return;
   }
 
