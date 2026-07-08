@@ -58,8 +58,10 @@ export async function livekitWebhook(request: FastifyRequest, reply: FastifyRepl
           : 0;
         await dbRoom.save();
 
-        // Stop billing
-        await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${dbRoom._id.toString()}`);
+        // Stop billing using the stored repeat key
+        if (dbRoom.billingRepeatKey) {
+          await billingQueue.removeRepeatableByKey(dbRoom.billingRepeatKey).catch(() => {});
+        }
 
         // Cancel any pending timeout job
         await callTimeoutQueue.remove(`call-timeout:${dbRoom._id.toString()}`).catch(() => {});

@@ -20,4 +20,6 @@ const reviewSchema = new Schema<IReview>(
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
+reviewSchema.index({ roomId: 1, reviewerId: 1 }, { unique: true });
+
 export const Review = mongoose.model<IReview>('Review', reviewSchema);

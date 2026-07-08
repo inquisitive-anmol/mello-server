@@ -1,15 +1,9 @@
 # LiveKit Server Configuration
 # This file is mounted into the livekit container at /etc/livekit.yaml
-# env vars (e.g. ${LIVEKIT_API_KEY}) are substituted at runtime by LiveKit's Viper config parser.
-
-# --- Webhook ---
-# LiveKit will POST signed JWT events to this URL on every room/participant lifecycle event.
-# IMPORTANT: Viper (LiveKit's config parser) does NOT interpolate ${ENV_VAR} in YAML values.
-#            You must set the literal API key value here on the VPS.
-#            Use this one-liner to auto-fill it from .env:
 #
-#   LIVEKIT_API_KEY=$(grep '^LIVEKIT_API_KEY=' .env | cut -d'=' -f2 | tr -d '"') \
-#     && sed -i "s|REPLACE_WITH_YOUR_LIVEKIT_API_KEY|${LIVEKIT_API_KEY}|g" livekit.yaml
+# IMPORTANT: This file should NOT contain raw API keys in git.
+# Run `docker/generate-livekit-config.sh` before deployment to generate this file
+# from `livekit.yaml.template`.
 #
 # api_key must match one of the keys defined in LIVEKIT_KEYS environment variable.
 webhook:

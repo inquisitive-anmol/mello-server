@@ -14,6 +14,7 @@ export interface IRoom extends Document {
   totalDuration: number;
   startedAt: Date;
   endedAt?: Date;
+  billingRepeatKey?: string; // BullMQ repeat key — stored to allow correct job cancellation
 }
 
 const roomSchema = new Schema<IRoom>(
@@ -33,6 +34,7 @@ const roomSchema = new Schema<IRoom>(
     totalDuration: { type: Number, default: 0 },
     startedAt: { type: Date, default: Date.now },
     endedAt: { type: Date },
+    billingRepeatKey: { type: String },
   },
   { timestamps: false }
 );

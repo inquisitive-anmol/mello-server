@@ -17,14 +17,14 @@ export async function getRoom(request: FastifyRequest<{ Params: { roomId: string
 }
 
 export async function endRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
-  const clerkId = (request as any).auth?.userId;
+  const userId = (request as any).auth.userId;
   const { roomId } = request.params;
   
   const room = await Room.findById(roomId);
   if (!room) return reply.status(404).send({ error: 'Room not found' });
 
   // A-5: Verify the requester is a participant in this room
-  const caller = await User.findById(clerkId);
+  const caller = await User.findById(userId);
   if (!caller) return reply.status(404).send({ error: 'User not found' });
 
   const isParticipant = room.participants.some(p => p.userId.equals(caller._id));
@@ -53,8 +53,10 @@ export async function endRoom(request: FastifyRequest<{ Params: { roomId: string
   await room.save();
 
 
-  // Remove billing job for this room
-  await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
+  // Remove billing job for this room using the stored repeat key
+  if (room.billingRepeatKey) {
+    await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+  }
 
   const io = getIO();
   const eventPayload = { 
@@ -78,8 +80,8 @@ export async function getCallHistory(
   request: FastifyRequest<{ Querystring: { page?: number; limit?: number } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId || 'dev_user_1';
-  const user = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const page = Number(request.query.page) || 1;
@@ -108,8 +110,8 @@ export async function submitReview(
   request: FastifyRequest<{ Params: { roomId: string }, Body: { rating: number; tags: string[] } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId || 'dev_user_1';
-  const user = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   const { roomId } = request.params;
@@ -128,13 +130,21 @@ export async function submitReview(
     return reply.status(400).send({ error: 'No partner found to review' });
   }
 
-  const review = await Review.create({
-    roomId: room._id,
-    reviewerId: user._id,
-    revieweeId: revieweeParticipant.userId,
-    rating,
-    tags
-  });
+  let review;
+  try {
+    review = await Review.create({
+      roomId: room._id,
+      reviewerId: user._id,
+      revieweeId: revieweeParticipant.userId,
+      rating,
+      tags
+    });
+  } catch (err: any) {
+    if (err.code === 11000) {
+      return reply.status(409).send({ error: 'You have already reviewed this call' });
+    }
+    throw err;
+  }
 
   // Increment rating metrics for the user in background
   User.findByIdAndUpdate(revieweeParticipant.userId, {
@@ -149,13 +159,18 @@ export async function initiateCall(
   request: FastifyRequest<{ Body: { targetUserId: string, type: 'audio' | 'video' } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId || 'dev_user_1';
-  const caller = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const caller = await User.findById(userId);
   if (!caller) return reply.status(404).send({ error: 'User not found' });
 
   const { targetUserId, type } = request.body;
   const targetUser = await User.findById(targetUserId);
   if (!targetUser) return reply.status(404).send({ error: 'Target user not found' });
+
+  // MVP gating: target must be opted-in as an available listener
+  if (!targetUser.settings?.isListener || !targetUser.settings?.isAvailable) {
+    return reply.status(403).send({ error: 'This user is not available for calls' });
+  }
 
   // B-1: Check if caller blocked target or target blocked caller
   if (caller.blockedUsers?.includes(targetUser._id.toString())) {
@@ -221,7 +236,7 @@ export async function acceptCall(
   request: FastifyRequest<{ Params: { roomId: string } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId || 'dev_user_1';
+  const userId = (request as any).auth.userId;
   const { roomId } = request.params;
   
   const room = await Room.findById(roomId);
@@ -231,21 +246,36 @@ export async function acceptCall(
     return reply.status(400).send({ error: 'Call is no longer waiting' });
   }
 
+  // SEC: Verify the requester is the intended callee (listener role)
+  const requester = await User.findById(userId);
+  if (!requester) return reply.status(404).send({ error: 'User not found' });
+
+  const listenerParticipant = room.participants.find(p => p.role === 'listener');
+  if (!listenerParticipant || !listenerParticipant.userId.equals(requester._id)) {
+    return reply.status(403).send({ error: 'Only the call recipient can accept this call' });
+  }
+
   room.status = 'active';
   room.startedAt = new Date();
   await room.save();
 
   // Listener token
-  const listenerToken = await RoomService.generateRtcToken(room.channelId, clerkId);
+  const listenerToken = await RoomService.generateRtcToken(room.channelId, userId);
 
   // Start billing job BEFORE emitting connected event
   try {
-    await billingQueue.add('charge', { roomId: room._id.toString() }, {
+    const billingJob = await billingQueue.add('charge', { roomId: room._id.toString() }, {
+      delay: 10000, // Wait 10s before the first billing attempt to let LiveKit connect
       repeat: { 
         every: 60000,
         jobId: `billing:${room._id.toString()}`
       }
     });
+    // Store the repeat key so we can cancel the job correctly later
+    if (billingJob.repeatJobKey) {
+      room.billingRepeatKey = billingJob.repeatJobKey;
+      await room.save();
+    }
   } catch (err) {
     console.error('Failed to start billing queue for call (Redis down?):', err);
     // Revert room status
@@ -271,14 +301,14 @@ export async function rejectCall(
   request: FastifyRequest<{ Params: { roomId: string } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId;
+  const userId = (request as any).auth.userId;
   const { roomId } = request.params;
   const room = await Room.findById(roomId);
   
   if (!room) return reply.status(404).send({ error: 'Room not found' });
 
   // A-5: Verify the requester is the intended callee (listener role)
-  const rejecter = await User.findById(clerkId);
+  const rejecter = await User.findById(userId);
   if (!rejecter) return reply.status(404).send({ error: 'User not found' });
 
   const listenerParticipant = room.participants.find(p => p.role === 'listener');
@@ -300,9 +330,10 @@ export async function rejectCall(
   // Cancel the pending timeout job now that the call has been explicitly rejected
   await callTimeoutQueue.remove(`call-timeout:${roomId}`).catch(() => {});
 
-  // Safely attempt to remove billing job if it somehow existed
-  await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
-
+  // Safely remove billing job if it somehow existed
+  if (room.billingRepeatKey) {
+    await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+  }
   const callerParticipant = room.participants.find(p => p.role === 'caller');
   if (callerParticipant) {
     const io = getIO();

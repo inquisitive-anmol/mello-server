@@ -2,7 +2,8 @@ import { buildApp } from './app';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { connectDB } from './config/database';
-import './jobs/matchmaking.worker';
+// DEFERRED: Random matchmaking algorithm not yet implemented
+// import './jobs/matchmaking.worker';
 import './jobs/billing.worker';
 import './jobs/presence.worker';
 import './jobs/call-timeout.worker'; // A-7: Persistent delayed job for 30s call auto-reject

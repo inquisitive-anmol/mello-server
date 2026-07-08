@@ -1,3 +1,5 @@
+import { redis } from '../config/redis';
+
 // Lazily instantiated to avoid ESM require errors
 let expoInstance: any = null;
 let ExpoClass: any = null;
@@ -28,11 +30,20 @@ export async function sendPushNotification({
     return;
   }
 
+  // Rate Limiting (1 per 10s per token to avoid spam)
+  const rateLimitKey = `push:limit:${pushToken}`;
+  const isLimited = await redis.get(rateLimitKey);
+  if (isLimited) return;
+  await redis.set(rateLimitKey, '1', 'EX', 10);
+
+  // Content Masking for Privacy
+  const finalBody = data?.type === 'chat_message' ? 'New message received' : body;
+
   const message: any = {
     to: pushToken,
     sound: 'default',
     title,
-    body,
+    body: finalBody,
     data,
     priority: 'high',
     channelId: 'incoming-calls', // Android channel

@@ -4,16 +4,18 @@ import { PartnerApplication } from './partner-application.model';
 import { Report } from './report.model';
 import { redis } from '../../config/redis';
 import { Types } from 'mongoose';
+import { Room } from '../rooms/room.model';
+import { RoomService } from '../rooms/room.service';
 
 export async function getMe(request: FastifyRequest, reply: FastifyReply) {
-  const clerkId = (request as any).auth.userId;
-  const user = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
   return reply.send(user);
 }
 
 export async function updateMe(request: FastifyRequest, reply: FastifyReply) {
-  const clerkId = (request as any).auth.userId;
+  const userId = (request as any).auth.userId;
   const updates = request.body as any;
 
   // Flatten the object for $set so nested properties don't overwrite the whole object
@@ -34,7 +36,7 @@ export async function updateMe(request: FastifyRequest, reply: FastifyReply) {
   delete flatUpdates['settings.isVerified'];
 
   const user = await User.findByIdAndUpdate(
-    clerkId,
+    userId,
     { $set: flatUpdates },
     { new: true }
   );
@@ -59,7 +61,7 @@ export async function getUserProfile(request: FastifyRequest<{ Params: { usernam
 }
 
 export async function updateAvailability(request: FastifyRequest<{ Body: { isAvailable: boolean, videoEnabled?: boolean } }>, reply: FastifyReply) {
-  const clerkId = (request as any).auth.userId;
+  const userId = (request as any).auth.userId;
   const { isAvailable, videoEnabled } = request.body;
 
   const updates: any = { 'settings.isAvailable': isAvailable };
@@ -68,7 +70,7 @@ export async function updateAvailability(request: FastifyRequest<{ Body: { isAva
   }
 
   const user = await User.findByIdAndUpdate(
-    clerkId,
+    userId,
     { $set: updates },
     { new: true }
   );
@@ -80,8 +82,8 @@ export async function updateAvailability(request: FastifyRequest<{ Body: { isAva
 }
 
 export async function applyPartner(request: FastifyRequest, reply: FastifyReply) {
-  const clerkId = (request as any).auth?.userId || 'dev_user_1';
-  const user = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const user = await User.findById(userId);
   if (!user) return reply.status(404).send({ error: 'User not found' });
 
   if (user.settings.isVerified) {
@@ -115,14 +117,14 @@ export async function savePushToken(
   request: FastifyRequest<{ Body: { pushToken: string } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId;
+  const userId = (request as any).auth.userId;
   const { pushToken } = request.body as any;
 
   if (!pushToken) {
     return reply.status(400).send({ error: 'pushToken is required' });
   }
 
-  await User.findByIdAndUpdate(clerkId, { $set: { pushToken } });
+  await User.findByIdAndUpdate(userId, { $set: { pushToken } });
   return reply.send({ success: true });
 }
 
@@ -130,8 +132,8 @@ export async function reportUser(
   request: FastifyRequest<{ Params: { id: string }, Body: { reason: string, description?: string } }>,
   reply: FastifyReply
 ) {
-  const clerkId = (request as any).auth?.userId;
-  const reporter = await User.findById(clerkId);
+  const userId = (request as any).auth.userId;
+  const reporter = await User.findById(userId);
   if (!reporter) return reply.status(404).send({ error: 'User not found' });
 
   const { id: reportedId } = request.params;
@@ -153,5 +155,51 @@ export async function reportUser(
     description
   });
 
+  // End any active room between the two users
+  const activeRoom = await Room.findOne({
+    'participants.userId': { $all: [reporter._id, reportedUser._id] },
+    status: { $in: ['waiting', 'active'] }
+  });
+
+  if (activeRoom) {
+    try {
+      await RoomService.endRoom(activeRoom._id.toString());
+    } catch (e) {
+      console.error('Failed to end room during report', e);
+    }
+  }
+
   return reply.send({ success: true, reportId: report._id });
+}
+
+export async function blockUser(
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply
+) {
+  const userId = (request as any).auth.userId;
+  const caller = await User.findById(userId);
+  if (!caller) return reply.status(404).send({ error: 'User not found' });
+
+  const { id: targetId } = request.params;
+  const targetUser = await User.findById(targetId);
+  if (!targetUser) return reply.status(404).send({ error: 'Target user not found' });
+
+  // Add to blockedUsers
+  await User.findByIdAndUpdate(userId, { $addToSet: { blockedUsers: targetUser._id } });
+
+  // End any active room between the two users
+  const activeRoom = await Room.findOne({
+    'participants.userId': { $all: [caller._id, targetUser._id] },
+    status: { $in: ['waiting', 'active'] }
+  });
+
+  if (activeRoom) {
+    try {
+      await RoomService.endRoom(activeRoom._id.toString());
+    } catch (e) {
+      console.error('Failed to end room during block', e);
+    }
+  }
+
+  return reply.send({ success: true });
 }

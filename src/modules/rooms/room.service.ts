@@ -75,8 +75,7 @@ export class RoomService {
     return {
       room,
       channelId,
-      callerToken: await this.generateRtcToken(channelId, callerId),
-      listenerToken: await this.generateRtcToken(channelId, listenerId)
+      callerToken: await this.generateRtcToken(channelId, callerId)
     };
   }
 
@@ -104,8 +103,7 @@ export class RoomService {
     return {
       room,
       channelId,
-      callerToken: await this.generateRtcToken(channelId, callerId),
-      listenerToken: await this.generateRtcToken(channelId, listenerId)
+      callerToken: await this.generateRtcToken(channelId, callerId)
     };
   }
 }

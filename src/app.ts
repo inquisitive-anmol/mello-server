@@ -100,7 +100,8 @@ export async function buildApp() {
     api.register(userRoutes, { prefix: '/users' });
     api.register(walletRoutes, { prefix: '/wallet' });
     api.register(discoveryRoutes, { prefix: '/discovery' });
-    api.register(matchRoutes, { prefix: '/match' });
+    // DEFERRED: Match routes disabled — random matchmaking algorithm not yet implemented
+    // api.register(matchRoutes, { prefix: '/match' });
     api.register(roomRoutes, { prefix: '/rooms' });
     api.register(chatRoutes, { prefix: '/chat' });
 

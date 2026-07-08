@@ -3,6 +3,7 @@ import { redis } from '../config/redis';
 import { MATCHMAKING_QUEUE_NAME } from './queue';
 import { logger } from '../utils/logger';
 
+// DEFERRED: Not active. Routes and worker init are disabled in app.ts and server.ts.
 // Very basic worker for MVP that just logs. 
 // In a real system, this would scan the Redis pool, find a match using Redlock, and call RoomService.
 export const matchmakingWorker = new Worker(MATCHMAKING_QUEUE_NAME, async (job) => {

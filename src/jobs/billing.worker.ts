@@ -41,13 +41,27 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
   const listenerPresence = await redis.get(`presence:${listenerId}`);
 
   if (!callerPresence || !listenerPresence) {
-    logger.warn({ roomId, callerId, listenerId }, 'A participant is offline, ending room');
+    const graceKey = `grace:${roomId}`;
+    const graceCount = await redis.incr(graceKey);
+    
+    if (graceCount === 1) {
+      await redis.expire(graceKey, 120); // 2 minutes expiry
+      logger.warn({ roomId, callerId, listenerId }, 'A participant is offline, entering 1-minute grace period');
+      return; // Skip billing this minute, but don't kill the room yet
+    }
+    
+    // Grace period expired (2 consecutive missing presence checks)
+    logger.warn({ roomId, callerId, listenerId }, 'Grace period expired, ending room');
+    await redis.del(graceKey);
+    
     room.status = 'ended';
     room.endedAt = new Date();
     room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
     await room.save();
 
-    await billingQueue.removeRepeatable('charge', { every: 60000 }, `billing:${roomId}`);
+    if (room.billingRepeatKey) {
+      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+    }
 
     const io = getIO();
     io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
@@ -57,6 +71,9 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
     });
     return;
   }
+
+  // Presence ok, clear any grace period
+  await redis.del(`grace:${roomId}`);
 
   const amount = room.billingRate;
 
@@ -80,6 +97,10 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
     room.endedAt = new Date();
     room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
     await room.save();
+
+    if (room.billingRepeatKey) {
+      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
+    }
 
     const io = getIO();
     io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
