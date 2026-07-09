@@ -64,7 +64,7 @@ export async function livekitWebhook(request: FastifyRequest, reply: FastifyRepl
         }
 
         // Cancel any pending timeout job
-        await callTimeoutQueue.remove(`call-timeout:${dbRoom._id.toString()}`).catch(() => {});
+        await callTimeoutQueue.remove(`call-timeout-${dbRoom._id.toString()}`).catch(() => {});
 
         // Notify participants that the call ended
         const io = getIO();

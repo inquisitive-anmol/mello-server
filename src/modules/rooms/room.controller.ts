@@ -218,7 +218,7 @@ export async function initiateCall(
     { roomId, callerId: caller._id.toString(), calleeId: targetUser._id.toString() },
     {
       delay: 30_000,
-      jobId: `call-timeout:${roomId}`,
+      jobId: `call-timeout-${roomId}`,
       removeOnComplete: true,
       removeOnFail: true,
     }
@@ -268,7 +268,7 @@ export async function acceptCall(
       delay: 10000, // Wait 10s before the first billing attempt to let LiveKit connect
       repeat: { 
         every: 60000,
-        jobId: `billing:${room._id.toString()}`
+        jobId: `billing-${room._id.toString()}`
       }
     });
     // Store the repeat key so we can cancel the job correctly later
@@ -328,7 +328,7 @@ export async function rejectCall(
   await room.save();
 
   // Cancel the pending timeout job now that the call has been explicitly rejected
-  await callTimeoutQueue.remove(`call-timeout:${roomId}`).catch(() => {});
+  await callTimeoutQueue.remove(`call-timeout-${roomId}`).catch(() => {});
 
   // Safely remove billing job if it somehow existed
   if (room.billingRepeatKey) {

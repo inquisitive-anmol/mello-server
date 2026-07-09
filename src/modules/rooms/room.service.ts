@@ -131,7 +131,7 @@ export class RoomService {
       await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
     }
 
-    await callTimeoutQueue.remove(`call-timeout:${roomId}`).catch(() => {});
+    await callTimeoutQueue.remove(`call-timeout-${roomId}`).catch(() => {});
 
     try {
       await roomServiceClient.deleteRoom(room.channelId);
