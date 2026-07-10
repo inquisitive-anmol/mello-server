@@ -36,44 +36,9 @@ export async function endRoom(request: FastifyRequest<{ Params: { roomId: string
     return reply.send({ message: 'Room already ended' });
   }
 
-  const wasActive = room.status === 'active';
-  room.status = 'ended';
-  room.endedAt = new Date();
-  // If the room never became active (missed call), totalDuration stays 0
-  room.totalDuration = wasActive
-    ? Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000)
-    : 0;
+  await RoomService.endRoom(roomId);
 
-  // C-4: Set leftAt for the participant who initiated the hang-up
-  const hangingUpParticipant = room.participants.find(p => p.userId.equals(caller._id));
-  if (hangingUpParticipant) {
-    hangingUpParticipant.leftAt = new Date();
-  }
-
-  await room.save();
-
-
-  // Remove billing job for this room using the stored repeat key
-  if (room.billingRepeatKey) {
-    await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
-  }
-
-  const io = getIO();
-  const eventPayload = { 
-    roomId, 
-    duration: room.totalDuration, 
-    reason: 'user_ended' 
-  };
-  
-  // Emit to the room
-  io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
-  
-  // Also emit directly to individual participants to guarantee delivery
-  room.participants.forEach(p => {
-    io.to(p.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, eventPayload);
-  });
-
-  return reply.send({ success: true, duration: room.totalDuration });
+  return reply.send({ success: true, message: 'Room ended' });
 }
 
 export async function getCallHistory(
@@ -239,51 +204,38 @@ export async function acceptCall(
   const userId = (request as any).auth.userId;
   const { roomId } = request.params;
   
-  const room = await Room.findById(roomId);
-  if (!room) return reply.status(404).send({ error: 'Room not found' });
-
-  if (room.status !== 'waiting') {
-    return reply.status(400).send({ error: 'Call is no longer waiting' });
-  }
-
   // SEC: Verify the requester is the intended callee (listener role)
   const requester = await User.findById(userId);
   if (!requester) return reply.status(404).send({ error: 'User not found' });
 
-  const listenerParticipant = room.participants.find(p => p.role === 'listener');
-  if (!listenerParticipant || !listenerParticipant.userId.equals(requester._id)) {
-    return reply.status(403).send({ error: 'Only the call recipient can accept this call' });
-  }
+  // Atomic state transition: Ensure we only accept if the room is still waiting.
+  // This prevents the "Zombie Call" race condition where the caller cancels exactly as the listener accepts.
+  const room = await Room.findOneAndUpdate(
+    { 
+      _id: roomId, 
+      status: 'waiting',
+      'participants.userId': requester._id,
+      'participants.role': 'listener' 
+    },
+    { 
+      $set: { 
+        status: 'active',
+        startedAt: new Date()
+      } 
+    },
+    { new: true }
+  );
 
-  room.status = 'active';
-  room.startedAt = new Date();
-  await room.save();
+  if (!room) {
+    // If not found, it either doesn't exist, isn't waiting, or the user isn't the listener.
+    return reply.status(400).send({ error: 'Call is no longer available or unauthorized' });
+  }
 
   // Listener token
   const listenerToken = await RoomService.generateRtcToken(room.channelId, userId);
 
-  // Start billing job BEFORE emitting connected event
-  try {
-    const billingJob = await billingQueue.add('charge', { roomId: room._id.toString() }, {
-      delay: 10000, // Wait 10s before the first billing attempt to let LiveKit connect
-      repeat: { 
-        every: 60000,
-        jobId: `billing-${room._id.toString()}`
-      }
-    });
-    // Store the repeat key so we can cancel the job correctly later
-    if (billingJob.repeatJobKey) {
-      room.billingRepeatKey = billingJob.repeatJobKey;
-      await room.save();
-    }
-  } catch (err) {
-    console.error('Failed to start billing queue for call (Redis down?):', err);
-    // Revert room status
-    room.status = 'ended';
-    room.endedAt = new Date();
-    await room.save();
-    return reply.status(500).send({ error: 'Failed to start billing for call' });
-  }
+  // Billing is intentionally NOT started here anymore.
+  // It will be triggered by LiveKit's participant_joined webhook when both users actually connect.
 
   // For the caller, emit CALL_CONNECTED now that everything is set up successfully
   const callerParticipant = room.participants.find(p => p.role === 'caller');
@@ -316,32 +268,7 @@ export async function rejectCall(
     return reply.status(403).send({ error: 'Only the call recipient can reject this call' });
   }
 
-  room.status = 'ended';
-  room.endedAt = new Date();
 
-  // C-4: Set leftAt for the rejecting listener
-  const listenerEntry = room.participants.find(p => p.userId.equals(rejecter._id));
-  if (listenerEntry) {
-    listenerEntry.leftAt = new Date();
-  }
-
-  await room.save();
-
-  // Cancel the pending timeout job now that the call has been explicitly rejected
-  await callTimeoutQueue.remove(`call-timeout-${roomId}`).catch(() => {});
-
-  // Safely remove billing job if it somehow existed
-  if (room.billingRepeatKey) {
-    await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
-  }
-  const callerParticipant = room.participants.find(p => p.role === 'caller');
-  if (callerParticipant) {
-    const io = getIO();
-    io.to(callerParticipant.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, {
-      roomId: room._id.toString(),
-      reason: 'rejected'
-    });
-  }
-
+  await RoomService.endRoom(roomId);
   return reply.send({ success: true });
 }

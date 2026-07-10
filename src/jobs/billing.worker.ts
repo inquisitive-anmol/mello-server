@@ -55,21 +55,8 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
     logger.warn({ roomId, callerId, listenerId }, 'Grace period expired, ending room');
     await redis.del(graceKey);
     
-    room.status = 'ended';
-    room.endedAt = new Date();
-    room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
-    await room.save();
-
-    if (room.billingRepeatKey) {
-      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
-    }
-
-    const io = getIO();
-    io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
-      roomId, 
-      duration: room.totalDuration, 
-      reason: 'user_disconnected' 
-    });
+    const { RoomService } = require('../modules/rooms/room.service');
+    await RoomService.endRoom(roomId);
     return;
   }
 
@@ -79,14 +66,15 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
   const amount = room.billingRate;
 
   try {
-    const result = await WalletService.debit(callerId, amount, 'call_charge', roomId);
+    const idempotencyKey = job.id || `billing-${roomId}-${Date.now()}`;
+    const result = await WalletService.debit(callerId, amount, 'call_charge', idempotencyKey);
     
     // Broadcast the new balance to the caller
     const io = getIO();
     io.to(callerId).emit(SOCKET_EVENTS.COIN_BALANCE_UPDATE, { newBalance: result.newBalance });
     
     // Credit the listener (Commission for the active minute)
-    const creditResult = await WalletService.credit(listenerId, amount, 'call_earnings', roomId);
+    const creditResult = await WalletService.credit(listenerId, amount, 'call_earnings', idempotencyKey);
     io.to(listenerId).emit(SOCKET_EVENTS.COIN_BALANCE_UPDATE, { newBalance: creditResult.newBalance });
 
     logger.info({ roomId, callerId, listenerId, amount }, 'Successfully billed caller and credited listener for active minute');
@@ -94,21 +82,8 @@ export const billingWorker = new Worker(BILLING_QUEUE_NAME, async (job) => {
     logger.warn({ roomId, callerId, err: error.message }, 'Billing failed, ending room');
     
     // Insufficient funds or error, end the call
-    room.status = 'ended';
-    room.endedAt = new Date();
-    room.totalDuration = Math.floor((room.endedAt.getTime() - room.startedAt.getTime()) / 1000);
-    await room.save();
-
-    if (room.billingRepeatKey) {
-      await billingQueue.removeRepeatableByKey(room.billingRepeatKey).catch(() => {});
-    }
-
-    const io = getIO();
-    io.to(roomId).emit(SOCKET_EVENTS.CALL_ENDED, { 
-      roomId, 
-      duration: room.totalDuration, 
-      reason: 'insufficient_funds' 
-    });
+    const { RoomService } = require('../modules/rooms/room.service');
+    await RoomService.endRoom(roomId);
   }
 }, { connection: redis });
 

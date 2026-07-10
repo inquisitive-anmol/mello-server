@@ -32,17 +32,8 @@ export const callTimeoutWorker = new Worker(
         return;
       }
 
-      room.status = 'ended';
-      room.endedAt = new Date();
-
-      // C-4: Set leftAt on both participants — the call never connected but we still
-      // want a complete per-participant timeline record.
-      const now = new Date();
-      room.participants.forEach(p => {
-        if (!p.leftAt) p.leftAt = now;
-      });
-
-      await room.save();
+      const { RoomService } = require('../modules/rooms/room.service');
+      await RoomService.endRoom(roomId);
 
       const io = getIO();
 

@@ -90,7 +90,7 @@ export class DiscoveryService {
     for (const conv of conversations) {
       if (!conv.lastMessage) continue; // Skip empty conversations
       
-      const partner: any = conv.participants.find((p: any) => p._id.toString() !== user._id.toString());
+      const partner: any = conv.participants.find((p: any) => p && p._id && p._id.toString() !== user._id.toString());
       if (!partner) continue;
 
       const dateStr = conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleDateString() : 'Recently';
@@ -114,14 +114,14 @@ export class DiscoveryService {
 
     // Process rooms
     for (const room of rooms) {
-      const partnerParticipant: any = room.participants.find((p: any) => p.userId._id.toString() !== user._id.toString());
+      const partnerParticipant: any = room.participants.find((p: any) => p && p.userId && p.userId._id && p.userId._id.toString() !== user._id.toString());
       if (!partnerParticipant) continue;
       
       const partner = partnerParticipant.userId;
 
       const dateStr = room.startedAt ? new Date(room.startedAt).toLocaleDateString() : 'Recently';
-      const durationStr = room.totalDuration > 0 ? `${Math.floor(room.totalDuration / 60)} mins` : 'Missed';
-      const isMissed = room.totalDuration === 0;
+      const durationStr = (room.totalDuration || 0) > 0 ? `${Math.floor(room.totalDuration / 60)} mins` : 'Missed';
+      const isMissed = (room.totalDuration || 0) === 0;
 
       historyItems.push({
         id: partner.phoneNumber || partner._id.toString(),

@@ -39,6 +39,14 @@ export class WalletService {
       }
 
       const currentBalance = parseFloat(wallet.balance.toString());
+      
+      if (referenceId) {
+        const existing = await WalletLedger.findOne({ userId, type: 'CREDIT', referenceId }).session(session);
+        if (existing) {
+          return { success: true, newBalance: currentBalance, idempotent: true };
+        }
+      }
+
       const newBalance = currentBalance + amount;
 
       wallet.balance = mongoose.Types.Decimal128.fromString(newBalance.toString());
@@ -97,6 +105,14 @@ export class WalletService {
       }
 
       const currentBalance = parseFloat(wallet.balance.toString());
+
+      if (referenceId) {
+        const existing = await WalletLedger.findOne({ userId, type: 'DEBIT', referenceId }).session(session);
+        if (existing) {
+          return { success: true, newBalance: currentBalance, idempotent: true };
+        }
+      }
+
       if (currentBalance < amount) {
         throw new Error('Insufficient balance');
       }

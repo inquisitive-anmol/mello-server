@@ -50,33 +50,8 @@ export async function livekitWebhook(request: FastifyRequest, reply: FastifyRepl
       }
 
       if (dbRoom.status !== 'ended') {
-        const wasActive = dbRoom.status === 'active';
-        dbRoom.status = 'ended';
-        dbRoom.endedAt = new Date();
-        dbRoom.totalDuration = wasActive
-          ? Math.floor((dbRoom.endedAt.getTime() - dbRoom.startedAt.getTime()) / 1000)
-          : 0;
-        await dbRoom.save();
-
-        // Stop billing using the stored repeat key
-        if (dbRoom.billingRepeatKey) {
-          await billingQueue.removeRepeatableByKey(dbRoom.billingRepeatKey).catch(() => {});
-        }
-
-        // Cancel any pending timeout job
-        await callTimeoutQueue.remove(`call-timeout-${dbRoom._id.toString()}`).catch(() => {});
-
-        // Notify participants that the call ended
-        const io = getIO();
-        const payload = {
-          roomId: dbRoom._id.toString(),
-          duration: dbRoom.totalDuration,
-          reason: 'room_finished',
-        };
-        dbRoom.participants.forEach(p => {
-          io.to(p.userId.toString()).emit(SOCKET_EVENTS.CALL_ENDED, payload);
-        });
-
+        const { RoomService } = require('./room.service');
+        await RoomService.endRoom(dbRoom._id.toString());
         logger.info({ roomId: dbRoom._id, channelId: room.name }, '[LiveKit Webhook] room_finished → Room ended in DB');
       }
     }
@@ -99,6 +74,31 @@ export async function livekitWebhook(request: FastifyRequest, reply: FastifyRepl
 
         // If all participants have left, the room will be finished by LiveKit's emptyTimeout.
         // We don't need to force-end here — let room_finished handle it.
+      }
+    }
+
+    if (eventName === 'participant_joined' && room) {
+      // Authoritative Billing Trigger: Only start billing when BOTH participants are physically in the room
+      if (room.numParticipants === 2) {
+        const dbRoom = await Room.findOne({ channelId: room.name });
+        if (dbRoom && dbRoom.status === 'active' && !dbRoom.billingRepeatKey) {
+          try {
+            const billingJob = await billingQueue.add('charge', { roomId: dbRoom._id.toString() }, {
+              delay: 10000, // 10s grace period after both join
+              repeat: { 
+                every: 60000,
+                jobId: `billing-${dbRoom._id.toString()}`
+              }
+            });
+            if (billingJob.repeatJobKey) {
+              dbRoom.billingRepeatKey = billingJob.repeatJobKey;
+              await dbRoom.save();
+              logger.info({ roomId: dbRoom._id }, '[LiveKit Webhook] participant_joined → Billing started');
+            }
+          } catch (err) {
+            logger.error({ err, roomId: dbRoom._id }, '[LiveKit Webhook] Failed to start billing');
+          }
+        }
       }
     }
 
