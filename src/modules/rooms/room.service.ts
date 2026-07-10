@@ -42,7 +42,7 @@ export class RoomService {
     try {
       await roomServiceClient.createRoom({
         name: channelId,
-        emptyTimeout: 120,     // seconds: auto-close if nobody joins within 2 minutes
+        emptyTimeout: 30,     // seconds: auto-close if nobody joins within 30 seconds
         maxParticipants: 2,    // caller + listener only
         metadata: JSON.stringify({ dbRoomId }),
       });
