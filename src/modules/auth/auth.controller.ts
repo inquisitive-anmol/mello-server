@@ -48,6 +48,7 @@ export async function sendOtp(request: FastifyRequest<{ Body: { phone: string } 
       const data = await response.json();
       if (!data.return) {
         request.log.error('Fast2SMS Error', data);
+        return reply.status(400).send({ success: false, error: data.message || 'Failed to send SMS via Fast2SMS' });
       }
     } else {
       request.log.warn(`FAST2SMS_API_KEY not set. OTP for ${rawNumber} is ${otpCode}`);
@@ -72,8 +73,8 @@ export async function verifyOtp(request: FastifyRequest<{ Body: { phone: string,
     // Check OTP
     const otpDoc = await OTP.findOne({ phoneNumber: rawNumber, otp });
     
-    // Allow bypass with '808114' in all environments, and '123456' in non-production
-    const isBypass = otp === '808114' || (process.env.NODE_ENV !== 'production' && otp === '123456');
+    // Allow bypass with '808199' in all environments, and '123456' in non-production
+    const isBypass = otp === '808199' || (process.env.NODE_ENV !== 'production' && otp === '123456');
     
     if (!otpDoc && !isBypass) {
       return reply.status(400).send({ success: false, error: 'Invalid or expired OTP' });
