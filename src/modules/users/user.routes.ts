@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../../middleware/auth.middleware';
-import { getMe, updateMe, updateAvailability, applyPartner, getUserProfile, savePushToken, reportUser, blockUser } from './user.controller';
+import { getMe, updateMe, updateAvailability, applyPartner, getUserProfile, savePushToken, reportUser, blockUser, deleteAccount } from './user.controller';
 import { uploadAvatar } from './upload.controller';
 
 export async function userRoutes(app: FastifyInstance) {
@@ -8,6 +8,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.get('/me', getMe);
   app.patch('/me', updateMe);
+  app.delete('/me', deleteAccount);
   app.get('/:username', getUserProfile);
   app.patch('/me/availability', updateAvailability);
   

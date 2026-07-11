@@ -203,3 +203,14 @@ export async function blockUser(
 
   return reply.send({ success: true });
 }
+
+export async function deleteAccount(request: FastifyRequest, reply: FastifyReply) {
+  const userId = (request as any).auth.userId;
+  const user = await User.findById(userId);
+  if (!user) return reply.status(404).send({ error: 'User not found' });
+
+  await User.findByIdAndDelete(userId);
+  await redis.del('discovery:listeners');
+
+  return reply.send({ success: true, message: 'Account deleted successfully' });
+}
