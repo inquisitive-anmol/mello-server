@@ -3,6 +3,7 @@ import { User } from '../users/user.model';
 import { AppConfig } from './config.model';
 import { Room } from '../rooms/room.model';
 import { Conversation } from '../chat/chat.model';
+import { SystemSettings } from '../admin/system-settings.model';
 
 const DISCOVERY_CACHE_KEY = 'discovery:listeners';
 const DISCOVERY_CACHE_TTL = 60; // 60 seconds
@@ -36,10 +37,14 @@ export class DiscoveryService {
       room.participants.forEach(p => busyUserIds.add(p.userId.toString()));
     });
 
+    const settings = await SystemSettings.findOne();
+
     listeners = listeners.map(u => ({
       ...u,
       isBusy: busyUserIds.has(u._id.toString()),
-      isOnline: u.settings?.isAvailable || false
+      isOnline: u.settings?.isAvailable || false,
+      audioRate: settings?.audioCallRatePerMinute || 15,
+      videoRate: settings?.videoCallRatePerMinute || 30
     }));
 
     const skip = (page - 1) * limit;
@@ -76,13 +81,15 @@ export class DiscoveryService {
 
     // Fetch conversations
     const conversations = await Conversation.find({ participants: user._id })
-      .populate('participants', 'clerkId profile.displayName profile.avatarUrl profile.vibeTags profile.location settings.isAvailable settings.callRate')
+      .populate('participants', 'clerkId profile.displayName profile.avatarUrl profile.vibeTags profile.location settings.isAvailable settings.videoEnabled')
       .lean();
 
     // Fetch rooms
     const rooms = await Room.find({ 'participants.userId': user._id })
-      .populate('participants.userId', 'clerkId profile.displayName profile.avatarUrl profile.vibeTags profile.location settings.isAvailable settings.callRate')
+      .populate('participants.userId', 'clerkId profile.displayName profile.avatarUrl profile.vibeTags profile.location settings.isAvailable settings.videoEnabled')
       .lean();
+
+    const settings = await SystemSettings.findOne();
 
     const historyItems: any[] = [];
 
@@ -107,7 +114,8 @@ export class DiscoveryService {
         actionText: 'Reply',
         languages: partner.profile?.languages || [],
         location: partner.profile?.location?.city || 'Unknown',
-        rateCoins: partner.settings?.callRate || 0,
+        audioRate: settings?.audioCallRatePerMinute || 15,
+        videoRate: settings?.videoCallRatePerMinute || 30,
         videoAvailable: partner.settings?.videoEnabled || false
       });
     }
@@ -136,7 +144,8 @@ export class DiscoveryService {
         actionText: isMissed ? 'Call Back' : 'Call Again',
         languages: partner.profile?.languages || [],
         location: partner.profile?.location?.city || 'Unknown',
-        rateCoins: partner.settings?.callRate || 0,
+        audioRate: settings?.audioCallRatePerMinute || 15,
+        videoRate: settings?.videoCallRatePerMinute || 30,
         videoAvailable: partner.settings?.videoEnabled || false
       });
     }

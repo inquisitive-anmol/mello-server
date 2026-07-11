@@ -8,6 +8,7 @@ import { billingQueue, callTimeoutQueue } from '../../jobs/queue';
 import { RoomService } from './room.service';
 import { WalletService } from '../wallet/wallet.service';
 import { sendPushNotification } from '../../services/push.service';
+import { SystemSettings } from '../admin/system-settings.model';
 
 export async function getRoom(request: FastifyRequest<{ Params: { roomId: string } }>, reply: FastifyReply) {
   const { roomId } = request.params;
@@ -145,7 +146,11 @@ export async function initiateCall(
     return reply.status(403).send({ error: 'You cannot call this user' });
   }
 
-  const billingRate = targetUser.settings.callRate || 8;
+  const settings = await SystemSettings.findOne();
+  const audioRate = settings?.audioCallRatePerMinute || 15;
+  const videoRate = settings?.videoCallRatePerMinute || 30;
+  
+  const billingRate = type === 'video' ? videoRate : audioRate;
 
   const balance = await WalletService.getBalance(caller._id.toString());
   if (balance < billingRate) {
